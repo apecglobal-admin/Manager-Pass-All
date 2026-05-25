@@ -224,8 +224,8 @@ function renderProjects() {
           <small>${escapeHtml(project.status)}</small>
         </div>
         <span class="project-actions">
-          ${can('users.manage') ? `<button type="button" title="Thành viên dự án" data-project-members="${project.id}">Thành viên</button>` : ''}
-          ${isAdmin() ? `<button type="button" title="Sửa dự án" data-edit-project="${project.id}">Sửa</button><button type="button" title="Xóa dự án" data-delete-project="${project.id}">Xóa</button>` : ''}
+          ${can('users.manage') ? `<button class="icon-btn" type="button" title="Thành viên dự án" aria-label="Thành viên dự án" data-project-members="${project.id}">${svgIcon('users')}</button>` : ''}
+          ${isAdmin() ? `<button class="icon-btn" type="button" title="Sửa dự án" aria-label="Sửa dự án" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="icon-btn danger" type="button" title="Xóa dự án" aria-label="Xóa dự án" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
         </span>
       </div>
     `).join('');
@@ -355,7 +355,7 @@ function renderEntries(rows = state.entries) {
   $('#emptyState').classList.toggle('hidden', filtered.length > 0);
   $('#entryList').innerHTML = filtered.map(entry => `
     <button class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" data-select="${entry.id}">
-      <span class="entry-icon">${iconForType(entry.type)}</span>
+      <span class="entry-icon">${svgIcon(iconNameForType(entry.type))}<span>${iconForType(entry.type)}</span></span>
       <span class="entry-text">
         <strong>${escapeHtml(entry.name)}</strong>
         <small>${escapeHtml(entry.username || entry.url || 'No user')}</small>
@@ -386,7 +386,7 @@ function renderDetail(entry) {
   if (!entry) {
     $('#detailPanel').className = 'detail-empty';
     $('#detailPanel').innerHTML = `
-      <div class="empty-lock">AP</div>
+      <div class="empty-lock">${svgIcon('shield')}</div>
       <h2>Chọn một account</h2>
       <p>Account, mật khẩu và đường link sẽ hiển thị ở đây.</p>
     `;
@@ -408,35 +408,35 @@ function renderDetail(entry) {
         <p><span class="tag-dot"></span> ${escapeHtml(projectName(entry.projectId))}</p>
       </div>
       <div class="detail-actions">
-        ${canEditEntry ? `<button data-edit="${entry.id}">Sửa</button>` : ''}
-        ${canDeleteEntry ? `<button data-delete="${entry.id}">Xóa</button>` : ''}
+        ${canEditEntry ? `<button data-edit="${entry.id}">${svgIcon('edit')} Sửa</button>` : ''}
+        ${canDeleteEntry ? `<button data-delete="${entry.id}">${svgIcon('trash')} Xóa</button>` : ''}
       </div>
     </header>
 
     <section class="secret-card">
       <div class="secret-row">
-        <span class="secret-icon">ID</span>
+        <span class="secret-icon">${svgIcon('user')}</span>
         <div>
           <small>Email</small>
           <strong>${canViewUsername ? escapeHtml(entry.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
         </div>
-        ${canViewUsername && entry.username ? `<button class="ghost-btn" data-copy="${escapeAttr(entry.username)}">Copy</button>` : ''}
+        ${canViewUsername && entry.username ? `<button class="ghost-btn" data-copy="${escapeAttr(entry.username)}">${svgIcon('copy')} Copy</button>` : ''}
       </div>
       <div class="secret-row">
-        <span class="secret-icon">PW</span>
+        <span class="secret-icon">${svgIcon('key')}</span>
         <div>
           <small>Mật khẩu</small>
           <strong class="password-text">${escapeHtml(password)}</strong>
         </div>
         ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-        <button class="ghost-btn" data-reveal="${entry.id}">Xem</button>
-        <button class="ghost-btn" data-copy-pass="${entry.id}">Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+        <button class="ghost-btn" data-reveal="${entry.id}">${svgIcon('eye')} Xem</button>
+        <button class="ghost-btn" data-copy-pass="${entry.id}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
       </div>
     </section>
 
     <section class="secret-card single">
       <div class="secret-row">
-        <span class="secret-icon">URL</span>
+        <span class="secret-icon">${svgIcon('link')}</span>
         <div>
           <small>Trang web</small>
           ${canViewUrl
@@ -467,6 +467,20 @@ function projectName(projectId) {
 function iconForType(type) {
   const labels = { Web: 'WEB', Admin: 'ADM', Mobile: 'MOB', Desktop: 'DSK', API: 'API', Hosting: 'HST', Domain: 'DOM', Database: 'DB', Server: 'SRV' };
   return labels[type] || String(type || 'ACC').slice(0, 3).toUpperCase();
+}
+
+function iconNameForType(type) {
+  return {
+    Web: 'globe',
+    Admin: 'shield',
+    Mobile: 'phone',
+    Desktop: 'monitor',
+    API: 'api',
+    Hosting: 'server',
+    Domain: 'link',
+    Database: 'database',
+    Server: 'server'
+  }[type] || 'key';
 }
 
 function projectIcon(name) {
@@ -1063,6 +1077,27 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replaceAll('`', '&#096;');
+}
+
+function svgIcon(name) {
+  const icons = {
+    api: '<path d="M4 7h16"/><path d="M4 17h16"/><path d="M7 4v16"/><path d="M17 4v16"/>',
+    copy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>',
+    database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/>',
+    key: '<circle cx="7.5" cy="14.5" r="3.5"/><path d="M10 12 21 1"/><path d="m16 6 2 2"/><path d="m19 3 2 2"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
+    monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/>',
+    phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+    server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 8h.01"/><path d="M7 17h.01"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.7-4 14.3-4 16 0"/>',
+    users: '<path d="M16 21c0-2.2-2.7-4-6-4s-6 1.8-6 4"/><circle cx="10" cy="8" r="4"/><path d="M22 21c0-1.8-1.4-3.3-3.5-4"/><path d="M17 4a4 4 0 0 1 0 8"/>'
+  };
+  return `<svg class="svg-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${icons[name] || icons.key}</svg>`;
 }
 
 function formatDateTime(value) {
