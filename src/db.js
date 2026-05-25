@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME } from './config.js';
+import { DEFAULT_ADMIN_USERNAME, getConfiguredAdminPassword } from './config.js';
 import { hashPassword } from './crypto.js';
 
 const require = createRequire(import.meta.url);
@@ -9,7 +9,7 @@ export function createDatabase(path) {
   const db = openDatabase(path);
   db.exec('PRAGMA foreign_keys = ON');
   migrate(db);
-  seedAdmin(db);
+  seedAdmin(db, path);
   return db;
 }
 
@@ -268,20 +268,28 @@ function migrateProjectPermissionProjectIds(db) {
   `);
 }
 
-function seedAdmin(db) {
+function seedAdmin(db, path) {
   const row = db.prepare('SELECT id FROM users WHERE username = ?').get(DEFAULT_ADMIN_USERNAME);
   if (row) {
     db.prepare("UPDATE users SET role = 'Admin', status = 'Active' WHERE id = ?").run(row.id);
     return;
   }
+  const adminPassword = getInitialAdminPassword(path);
   db.prepare('INSERT INTO users (username, password_hash, display_name, role, status, permissions) VALUES (?, ?, ?, ?, ?, ?)').run(
     DEFAULT_ADMIN_USERNAME,
-    hashPassword(DEFAULT_ADMIN_PASSWORD),
+    hashPassword(adminPassword),
     'Quản trị hệ thống',
     'Admin',
     'Active',
     '[]'
   );
+}
+
+function getInitialAdminPassword(path) {
+  const configuredPassword = getConfiguredAdminPassword();
+  if (configuredPassword) return configuredPassword;
+
+  throw new Error('ADMIN_PASSWORD is required to create the initial admin user. Set ADMIN_PASSWORD before first launch.');
 }
 
 function slugify(value) {

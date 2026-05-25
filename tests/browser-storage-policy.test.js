@@ -11,6 +11,16 @@ test('browser code does not persist application data in cookies or Web Storage',
   assert.match(supabaseClient, /persistSession:\s*false/);
 });
 
+test('login form does not ship with default admin credentials', () => {
+  const html = readFileSync('public/index.html', 'utf8');
+  const loginForm = html.match(/<form id="loginForm"[\s\S]+?<\/form>/)?.[0] || '';
+
+  assert.doesNotMatch(loginForm, /value="admin"/);
+  assert.doesNotMatch(loginForm, /admin123456/);
+  assert.match(loginForm, /autocomplete="username"/);
+  assert.match(loginForm, /autocomplete="current-password"/);
+});
+
 test('frontend data CRUD goes through API endpoints instead of direct Supabase table writes', () => {
   const app = readFileSync('public/app.js', 'utf8');
 

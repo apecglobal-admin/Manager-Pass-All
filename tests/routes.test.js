@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/server.js';
 
+const TEST_ADMIN_PASSWORD = 'test-admin-password';
+process.env.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD;
+
 test('login, create project, create entry, and reveal password through API', async () => {
   const app = createApp({ dbPath: ':memory:', encryptionKey: Buffer.alloc(32, 5) });
   const server = await app.listen(0);
@@ -15,7 +18,7 @@ test('login, create project, create entry, and reveal password through API', asy
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     assert.equal(login.status, 200);
     const cookie = login.headers.get('set-cookie').split(';')[0];
@@ -66,7 +69,7 @@ test('authenticated user can save JSON backup to disk', async () => {
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
 
@@ -94,7 +97,7 @@ test('admin can update and delete projects through API', async () => {
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
 
@@ -174,7 +177,7 @@ test('project and entry writes can be delegated to a Supabase-backed data store'
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
 
@@ -254,7 +257,7 @@ test('delegated entry create resolves frontend type ids before writing to data s
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie } })).json();
@@ -305,7 +308,7 @@ test('project member permissions support delegated project ids without numeric c
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie } })).json();
@@ -354,7 +357,7 @@ test('project member API ignores admin users because admins already have full ac
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie } })).json();
@@ -471,7 +474,7 @@ test('non-admin sees delegated data-store projects through local project members
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie: adminCookie } })).json();
@@ -606,7 +609,7 @@ test('local login still delegates project writes through configured data store f
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
 
@@ -636,7 +639,7 @@ test('admin can create users and viewer permissions are enforced', async () => {
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -714,7 +717,7 @@ test('user account payload ignores legacy detailed permissions without a project
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie } })).json();
@@ -756,7 +759,7 @@ test('non-admin without detailed rules cannot see projects or reveal passwords',
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -819,7 +822,7 @@ test('detailed project type permissions control visible fields and password reve
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie: adminCookie } })).json();
@@ -940,7 +943,7 @@ test('project membership controls project visibility before detailed account per
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie: adminCookie } })).json();
@@ -1038,7 +1041,7 @@ test('admin manages project members and detailed permissions from the project AP
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
     const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie: adminCookie } })).json();
@@ -1140,7 +1143,7 @@ test('admin create user sends Supabase invite when invite service is configured'
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1186,7 +1189,7 @@ test('admin create user without invite service still creates local user', async 
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1230,7 +1233,7 @@ test('admin can resend Supabase invite for an existing local user', async () => 
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1287,7 +1290,7 @@ test('admin delete user also deletes matching Supabase auth user when configured
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1426,7 +1429,7 @@ test('Google login maps a verified email to an active local user', async () => {
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1480,7 +1483,7 @@ test('Google login activates an invited local user before the invite expires', a
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1528,7 +1531,7 @@ test('Google login creates a pending access request for verified emails that are
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1566,7 +1569,7 @@ test('admin can approve a pending Google access request and then Google login su
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1632,7 +1635,7 @@ test('approving a pending Google request activates the same user record and send
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 
@@ -1703,7 +1706,7 @@ test('Google login rejects inactive local users', async () => {
     const adminLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123456' })
+      body: JSON.stringify({ username: 'admin', password: TEST_ADMIN_PASSWORD })
     });
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0];
 

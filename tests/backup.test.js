@@ -7,6 +7,8 @@ import { createDatabase } from '../src/db.js';
 import { createRepositories } from '../src/repositories.js';
 import { buildBackup, writeBackupFiles } from '../src/backup.js';
 
+process.env.ADMIN_PASSWORD ||= 'test-admin-password';
+
 test('buildBackup exports all tables without plaintext passwords', () => {
   const db = createDatabase(':memory:');
   const repos = createRepositories(db, Buffer.alloc(32, 9));

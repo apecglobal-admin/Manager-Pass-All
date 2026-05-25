@@ -7,6 +7,26 @@ import { DatabaseSync } from 'node:sqlite';
 import { createDatabase } from '../src/db.js';
 import { createRepositories, hasPermission } from '../src/repositories.js';
 
+process.env.ADMIN_PASSWORD ||= 'test-admin-password';
+
+function withAdminPassword(password, callback) {
+  const previous = process.env.ADMIN_PASSWORD;
+  if (password === undefined) {
+    delete process.env.ADMIN_PASSWORD;
+  } else {
+    process.env.ADMIN_PASSWORD = password;
+  }
+  try {
+    return callback();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ADMIN_PASSWORD;
+    } else {
+      process.env.ADMIN_PASSWORD = previous;
+    }
+  }
+}
+
 test('creates a project with encrypted entry credentials', () => {
   const db = createDatabase(':memory:');
   const repos = createRepositories(db, Buffer.alloc(32, 3));
@@ -126,7 +146,7 @@ test('migrates project permission tables to support delegated project ids', () =
   `);
   oldDb.close();
 
-  const db = createDatabase(dbPath);
+  const db = withAdminPassword('migration-admin-pass', () => createDatabase(dbPath));
   const repos = createRepositories(db, Buffer.alloc(32, 32));
   const permissionProject = db.prepare('PRAGMA table_info(user_project_type_permissions)').all()
     .find(column => column.name === 'project_id');
@@ -145,6 +165,27 @@ test('migrates project permission tables to support delegated project ids', () =
   assert.equal(repos.detailedPermissions.get(2, 1, 1).canViewEntry, true);
   repos.detailedPermissions.upsert(2, '11111111-1111-4111-8111-111111111111', 1, { canViewEntry: true });
   assert.equal(repos.projectMemberships.has(2, '11111111-1111-4111-8111-111111111111'), true);
+  db.close();
+});
+
+test('persistent database creation requires configured initial admin password', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-required-')), 'app.db');
+
+  withAdminPassword(undefined, () => {
+    assert.throws(
+      () => createDatabase(dbPath),
+      /ADMIN_PASSWORD is required to create the initial admin user/
+    );
+  });
+});
+
+test('persistent database seeds initial admin from configured password only', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-configured-')), 'app.db');
+  const db = withAdminPassword('configured-admin-pass', () => createDatabase(dbPath));
+  const repos = createRepositories(db, Buffer.alloc(32, 33));
+
+  assert.equal(Boolean(repos.users.authenticate('admin', 'configured-admin-pass')), true);
+  assert.equal(repos.users.authenticate('admin', 'admin123456'), null);
   db.close();
 });
 

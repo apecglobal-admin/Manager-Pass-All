@@ -26,6 +26,7 @@ git push origin v0.1.1
 5. The workflow runs tests, builds the Windows NSIS installer, and publishes the release assets plus update metadata.
 
 The workflow uses `secrets.GITHUB_TOKEN`, which GitHub provides automatically for public releases in this repository.
+The workflow uses Node 22 LTS because native dependencies such as `better-sqlite3` do not always provide prebuilt binaries for newer odd/current Node releases.
 
 ## Runtime Behavior
 
