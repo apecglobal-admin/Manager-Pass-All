@@ -1,0 +1,78 @@
+{
+  "name": "apecglobal-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apecglobal-admin/Manager-Pass-All.git"
+  },
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "desktop": "electron .",
+    "package:win": "electron-builder --win nsis portable",
+    "package:win:portable": "electron-builder --win portable",
+    "publish:win": "electron-builder --win nsis --publish always",
+    "test": "node --test",
+    "backup": "node scripts/save-backup.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "better-sqlite3": "^12.10.0",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.apecglobal.manager",
+    "productName": "ApecGlobal Manager",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "apecglobal-admin",
+        "repo": "Manager-Pass-All",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "build/**/*",
+      "desktop/**/*",
+      "src/**/*",
+      "public/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "ApecGlobal-Manager-Setup-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ApecGlobal Manager"
+    },
+    "portable": {
+      "artifactName": "ApecGlobal-Manager-Portable-${version}.${ext}"
+    }
+  }
+}

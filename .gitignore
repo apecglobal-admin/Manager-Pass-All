@@ -1,0 +1,7 @@
+.env
+node_modules/
+dist/
+data/
+.superpowers/
+.codex/
+npm-debug.log*
