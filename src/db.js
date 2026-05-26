@@ -1,9 +1,13 @@
 import { createRequire } from 'node:module';
-import { DEFAULT_ADMIN_USERNAME, getConfiguredAdminPassword } from './config.js';
-import { hashPassword } from './crypto.js';
+import { join, dirname } from 'node:path';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { DEFAULT_ADMIN_USERNAME } from './config.js';
+import { hashPassword, verifyPassword } from './crypto.js';
 
 const require = createRequire(import.meta.url);
 const DEFAULT_ENTRY_TYPES = ['Web', 'Admin', 'Mobile', 'Desktop', 'API', 'Hosting', 'Domain', 'Database', 'Server', 'Other'];
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
+const LEGACY_INITIAL_ADMIN_PASSWORD_FILE = 'initial-admin-password.txt';
 
 export function createDatabase(path) {
   const db = openDatabase(path);
@@ -269,12 +273,13 @@ function migrateProjectPermissionProjectIds(db) {
 }
 
 function seedAdmin(db, path) {
-  const row = db.prepare('SELECT id FROM users WHERE username = ?').get(DEFAULT_ADMIN_USERNAME);
+  const row = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get(DEFAULT_ADMIN_USERNAME);
   if (row) {
     db.prepare("UPDATE users SET role = 'Admin', status = 'Active' WHERE id = ?").run(row.id);
+    resetLegacyGeneratedAdminPassword(db, row, path);
     return;
   }
-  const adminPassword = getInitialAdminPassword(path);
+  const adminPassword = getInitialAdminPassword();
   db.prepare('INSERT INTO users (username, password_hash, display_name, role, status, permissions) VALUES (?, ?, ?, ?, ?, ?)').run(
     DEFAULT_ADMIN_USERNAME,
     hashPassword(adminPassword),
@@ -285,11 +290,20 @@ function seedAdmin(db, path) {
   );
 }
 
-function getInitialAdminPassword(path) {
-  const configuredPassword = getConfiguredAdminPassword();
-  if (configuredPassword) return configuredPassword;
+function getInitialAdminPassword() {
+  return DEFAULT_ADMIN_PASSWORD;
+}
 
-  throw new Error('ADMIN_PASSWORD is required to create the initial admin user. Set ADMIN_PASSWORD before first launch.');
+function resetLegacyGeneratedAdminPassword(db, admin, dbPath) {
+  if (!dbPath || dbPath === ':memory:') return;
+  const legacyPasswordPath = join(dirname(dbPath), LEGACY_INITIAL_ADMIN_PASSWORD_FILE);
+  if (!existsSync(legacyPasswordPath)) return;
+
+  const legacyPassword = readFileSync(legacyPasswordPath, 'utf8').trim();
+  if (!legacyPassword || !verifyPassword(legacyPassword, admin.password_hash)) return;
+
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(DEFAULT_ADMIN_PASSWORD), admin.id);
+  rmSync(legacyPasswordPath, { force: true });
 }
 
 function slugify(value) {

@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createDatabase } from '../src/db.js';
 import { createRepositories, hasPermission } from '../src/repositories.js';
-
-process.env.ADMIN_PASSWORD ||= 'test-admin-password';
+import { hashPassword } from '../src/crypto.js';
 
 function withAdminPassword(password, callback) {
   const previous = process.env.ADMIN_PASSWORD;
@@ -146,7 +145,7 @@ test('migrates project permission tables to support delegated project ids', () =
   `);
   oldDb.close();
 
-  const db = withAdminPassword('migration-admin-pass', () => createDatabase(dbPath));
+  const db = createDatabase(dbPath);
   const repos = createRepositories(db, Buffer.alloc(32, 32));
   const permissionProject = db.prepare('PRAGMA table_info(user_project_type_permissions)').all()
     .find(column => column.name === 'project_id');
@@ -168,25 +167,56 @@ test('migrates project permission tables to support delegated project ids', () =
   db.close();
 });
 
-test('persistent database creation requires configured initial admin password', () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-required-')), 'app.db');
-
-  withAdminPassword(undefined, () => {
-    assert.throws(
-      () => createDatabase(dbPath),
-      /ADMIN_PASSWORD is required to create the initial admin user/
-    );
-  });
-});
-
-test('persistent database seeds initial admin from configured password only', () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-configured-')), 'app.db');
-  const db = withAdminPassword('configured-admin-pass', () => createDatabase(dbPath));
+test('persistent database seeds initial admin with fixed default password', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-default-')), 'app.db');
+  const db = withAdminPassword(undefined, () => createDatabase(dbPath));
   const repos = createRepositories(db, Buffer.alloc(32, 33));
 
-  assert.equal(Boolean(repos.users.authenticate('admin', 'configured-admin-pass')), true);
-  assert.equal(repos.users.authenticate('admin', 'admin123456'), null);
+  assert.equal(Boolean(repos.users.authenticate('admin', 'admin123')), true);
+  assert.equal(repos.users.authenticate('admin', 'configured-admin-pass'), null);
   db.close();
+});
+
+test('ADMIN_PASSWORD environment does not override fixed initial admin password', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-env-ignored-')), 'app.db');
+  const db = withAdminPassword('configured-admin-pass', () => createDatabase(dbPath));
+  const repos = createRepositories(db, Buffer.alloc(32, 34));
+
+  assert.equal(Boolean(repos.users.authenticate('admin', 'admin123')), true);
+  assert.equal(repos.users.authenticate('admin', 'configured-admin-pass'), null);
+  db.close();
+});
+
+test('existing admin password is not reset to fixed default on later startup', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'apec-admin-password-changed-')), 'app.db');
+  const db = createDatabase(dbPath);
+  db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(hashPassword('changed-admin-pass'), 'admin');
+  db.close();
+
+  const reopened = createDatabase(dbPath);
+  const repos = createRepositories(reopened, Buffer.alloc(32, 35));
+
+  assert.equal(Boolean(repos.users.authenticate('admin', 'changed-admin-pass')), true);
+  assert.equal(repos.users.authenticate('admin', 'admin123'), null);
+  reopened.close();
+});
+
+test('legacy generated desktop admin password is reset to fixed default', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'apec-admin-password-legacy-generated-'));
+  const dbPath = join(dir, 'app.db');
+  const generatedPassword = 'legacy-generated-pass';
+  const db = createDatabase(dbPath);
+  db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(hashPassword(generatedPassword), 'admin');
+  db.close();
+  writeFileSync(join(dir, 'initial-admin-password.txt'), `${generatedPassword}\n`);
+
+  const reopened = createDatabase(dbPath);
+  const repos = createRepositories(reopened, Buffer.alloc(32, 36));
+
+  assert.equal(Boolean(repos.users.authenticate('admin', 'admin123')), true);
+  assert.equal(repos.users.authenticate('admin', generatedPassword), null);
+  assert.equal(existsSync(join(dir, 'initial-admin-password.txt')), false);
+  reopened.close();
 });
 
 test('detailed permissions filter entries and mask unauthorized fields', () => {

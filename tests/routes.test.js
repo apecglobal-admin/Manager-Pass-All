@@ -6,8 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/server.js';
 
-const TEST_ADMIN_PASSWORD = 'test-admin-password';
-process.env.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD;
+const TEST_ADMIN_PASSWORD = 'admin123';
 
 test('login, create project, create entry, and reveal password through API', async () => {
   const app = createApp({ dbPath: ':memory:', encryptionKey: Buffer.alloc(32, 5) });

@@ -16,7 +16,7 @@ test('login form does not ship with default admin credentials', () => {
   const loginForm = html.match(/<form id="loginForm"[\s\S]+?<\/form>/)?.[0] || '';
 
   assert.doesNotMatch(loginForm, /value="admin"/);
-  assert.doesNotMatch(loginForm, /admin123456/);
+  assert.doesNotMatch(loginForm, /admin123/);
   assert.match(loginForm, /autocomplete="username"/);
   assert.match(loginForm, /autocomplete="current-password"/);
 });

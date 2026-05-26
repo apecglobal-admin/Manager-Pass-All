@@ -24,10 +24,6 @@ export function getEncryptionKey() {
   return cryptoKeyFromSecret(raw);
 }
 
-export function getConfiguredAdminPassword() {
-  return process.env.ADMIN_PASSWORD || '';
-}
-
 export function cryptoKeyFromSecret(secret) {
   return Buffer.from(secret.padEnd(32, '0').slice(0, 32));
 }
