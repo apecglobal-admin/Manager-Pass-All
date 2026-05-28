@@ -556,6 +556,11 @@ async function findUserByUsername(client, username) {
 }
 
 async function hasNoAppUsers(client) {
+  if (typeof client.rpc === 'function') {
+    const result = await client.rpc('has_no_app_users');
+    if (!result.error) return Boolean(result.data);
+    if (result.error.code !== 'PGRST202') throw result.error;
+  }
   const { data, error } = await client.from('app_users').select('id').limit(1);
   if (error) throw error;
   return !data?.length;

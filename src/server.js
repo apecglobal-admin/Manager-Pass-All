@@ -22,10 +22,24 @@ export function createApp({
   appUrl = APP_URL,
   repos,
   supabase,
-  createSupabaseClient = createClient
+  createSupabaseClient = createClient,
+  createReposForAccessToken
 } = {}) {
   const appSupabase = supabase || (repos ? null : createServerSupabaseClient(createSupabaseClient));
   const appRepos = repos || createSupabaseRepositories({ supabase: appSupabase, encryptionKey });
+  const scopedReposCache = new Map();
+  const scopedReposForAccessToken = createReposForAccessToken || (repos || supabase
+    ? null
+    : accessToken => {
+        if (!accessToken) return appRepos;
+        if (!scopedReposCache.has(accessToken)) {
+          scopedReposCache.set(accessToken, createSupabaseRepositories({
+            supabase: createServerSupabaseClient(createSupabaseClient, { accessToken }),
+            encryptionKey
+          }));
+        }
+        return scopedReposCache.get(accessToken);
+      });
   const route = createRouter(appRepos, {
     authenticateWithPassword: authenticateWithPassword === undefined
       ? createSupabasePasswordAuthenticator(createSupabaseClient)
@@ -38,7 +52,8 @@ export function createApp({
     deleteAuthUserByEmail,
     appUrl,
     sessionSecret: encryptionKey.toString('base64'),
-    repos: appRepos
+    repos: appRepos,
+    createReposForAccessToken: scopedReposForAccessToken
   });
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
@@ -81,7 +96,7 @@ export function createApp({
   };
 }
 
-function createServerSupabaseClient(createSupabaseClient) {
+function createServerSupabaseClient(createSupabaseClient, { accessToken } = {}) {
   const adminConfig = getSupabaseAdminConfig();
   const publicConfig = getPublicSupabaseConfig();
   const supabaseUrl = adminConfig.supabaseUrl || publicConfig.supabaseUrl;
@@ -89,8 +104,12 @@ function createServerSupabaseClient(createSupabaseClient) {
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.');
   }
+  const options = createSupabaseClientOptions();
+  if (accessToken && !adminConfig.serviceRoleKey) {
+    options.global = { headers: { Authorization: `Bearer ${accessToken}` } };
+  }
   return createSupabaseClient(supabaseUrl, supabaseKey, {
-    ...createSupabaseClientOptions()
+    ...options
   });
 }
 

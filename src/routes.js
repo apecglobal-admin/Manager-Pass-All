@@ -1,12 +1,20 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readJson, sendJson, sendText, parseCookies, csvEscape } from './http-utils.js';
 import { createSessionToken } from './crypto.js';
 import { hasPermission } from './supabase-repositories.js';
 
 const DEFAULT_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-export function createRouter(repos, options = {}) {
+export function createRouter(baseRepos, options = {}) {
   const sessions = new Map();
+  const reposContext = new AsyncLocalStorage();
+  const createReposForAccessToken = options.createReposForAccessToken;
+  const repos = new Proxy({}, {
+    get(_target, property) {
+      return (reposContext.getStore()?.repos || baseRepos)[property];
+    }
+  });
   const sessionSecret = String(options.sessionSecret || process.env.APP_SECRET || 'apecglobal-manager-local-development-secret');
   const sessionMaxAgeSeconds = Number(options.sessionMaxAgeSeconds || DEFAULT_SESSION_MAX_AGE_SECONDS);
   const authenticateWithPassword = options.authenticateWithPassword;
@@ -15,6 +23,15 @@ export function createRouter(repos, options = {}) {
   const notifyUserApproved = options.notifyUserApproved;
   const deleteAuthUserByEmail = options.deleteAuthUserByEmail;
   const appUrl = options.appUrl || 'http://localhost:3000';
+
+  function reposForAccessToken(accessToken) {
+    return accessToken && createReposForAccessToken ? createReposForAccessToken(accessToken) : baseRepos;
+  }
+
+  function useAccessToken(accessToken) {
+    const store = reposContext.getStore();
+    if (store) store.repos = reposForAccessToken(accessToken);
+  }
 
   function currentSession(req) {
     const token = parseCookies(req).session;
@@ -293,10 +310,11 @@ export function createRouter(repos, options = {}) {
   }
 
   return async function route(req, res) {
-    const url = new URL(req.url, 'http://localhost');
-    const path = url.pathname;
+    return reposContext.run({ repos: reposForAccessToken(currentSession(req)?.accessToken) }, async () => {
+      const url = new URL(req.url, 'http://localhost');
+      const path = url.pathname;
 
-    try {
+      try {
       if (req.method === 'POST' && path === '/api/auth/login') {
         if (!authenticateWithPassword) {
           return sendJson(res, 503, { error: 'Supabase password login is not configured' });
@@ -318,6 +336,7 @@ export function createRouter(repos, options = {}) {
 
         const email = String(verified?.email || '').trim();
         if (!email) return sendJson(res, 401, { error: 'Supabase account has no email' });
+        useAccessToken(verified.accessToken);
 
         let user;
         try {
@@ -360,6 +379,7 @@ export function createRouter(repos, options = {}) {
 
         const email = String(verified?.email || '').trim();
         if (!email) return sendJson(res, 401, { error: 'Supabase account has no verified email' });
+        useAccessToken(body.accessToken);
 
         let user;
         try {
@@ -714,10 +734,11 @@ export function createRouter(repos, options = {}) {
 
       sendJson(res, 404, { error: 'Not found' });
       return true;
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-      return true;
-    }
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+        return true;
+      }
+    });
   };
 
   async function projectMembersPayload(projectId) {

@@ -251,6 +251,46 @@ test('first Supabase login bootstraps admin session when app users table is empt
   }
 });
 
+test('Google access request uses Supabase user token scoped repositories', async () => {
+  const deniedRepos = createMemoryRepos({ users: [] });
+  deniedRepos.users.activateForGoogleLogin = async () => {
+    throw new Error('RLS denied');
+  };
+  const tokenRepos = createMemoryRepos({ users: [] });
+  let tokenUsed = '';
+
+  const app = createApp({
+    repos: deniedRepos,
+    createReposForAccessToken: accessToken => {
+      tokenUsed = accessToken;
+      return tokenRepos;
+    },
+    verifyGoogleAccessToken: async token => ({
+      id: 'auth-scoped',
+      authUserId: 'auth-scoped',
+      email: token === 'user-token' ? 'scoped@example.com' : '',
+      name: 'Scoped User'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'user-token' })
+    });
+    const body = await login.json();
+
+    assert.equal(login.status, 200);
+    assert.equal(tokenUsed, 'user-token');
+    assert.equal(body.user.username, 'scoped@example.com');
+  } finally {
+    await app.close();
+  }
+});
+
 function createMemoryRepos(overrides = {}) {
   const rows = {
     users: overrides.users || [{

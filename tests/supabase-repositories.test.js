@@ -65,6 +65,43 @@ test('first Supabase access request bootstraps an active admin user', async () =
   assert.equal(user.permissions.includes('users.manage'), true);
 });
 
+test('access request uses security definer app user count when RLS hides other users', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'existing-user',
+    auth_user_id: 'auth-existing',
+    username: 'existing@example.com',
+    display_name: 'Existing User',
+    role: 'Admin',
+    status: 'Active',
+    permissions: ['users.manage'],
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  let rpcCalled = false;
+  const supabase = {
+    ...createFakeSupabase(rows),
+    rpc(name) {
+      rpcCalled = true;
+      assert.equal(name, 'has_no_app_users');
+      return Promise.resolve({ data: false, error: null });
+    }
+  };
+  const repos = createSupabaseRepositories({
+    supabase,
+    encryptionKey: Buffer.alloc(32, 6)
+  });
+
+  const user = await repos.users.requestGoogleAccess({
+    username: 'new-user@example.com',
+    authUserId: 'auth-new-user',
+    displayName: 'New User'
+  });
+
+  assert.equal(rpcCalled, true);
+  assert.equal(user.role, 'Viewer');
+  assert.equal(user.status, 'Pending');
+});
+
 test('lists entry types from Supabase', async () => {
   const rows = createRows();
   rows.entry_types.push({
