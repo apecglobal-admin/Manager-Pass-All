@@ -1,0 +1,803 @@
+import { randomBytes } from 'node:crypto';
+import { decryptText, encryptText } from './crypto.js';
+import { DEFAULT_AUTO_LOCK_MINUTES } from './config.js';
+
+export const ROLE_PERMISSIONS = {
+  Admin: ['users.manage'],
+  Manager: ['users.manage'],
+  Viewer: []
+};
+
+const DEFAULT_ENTRY_TYPES = ['Web', 'Admin', 'Mobile', 'Desktop', 'API', 'Hosting', 'Domain', 'Database', 'Server', 'Other'];
+
+export function createSupabaseRepositories({ supabase, encryptionKey }) {
+  if (!supabase) throw new Error('Supabase client is required');
+
+  const repos = {
+    users: usersRepo(supabase),
+    entryTypes: entryTypesRepo(supabase),
+    projects: projectsRepo(supabase),
+    entries: entriesRepo(supabase, encryptionKey),
+    projectMemberships: projectMembershipsRepo(supabase),
+    detailedPermissions: detailedPermissionsRepo(supabase),
+    activity: activityRepo(supabase),
+    settings: settingsRepo(supabase),
+    export: null
+  };
+  repos.export = exportRepo(repos);
+  return repos;
+}
+
+export function hasPermission(user, permission) {
+  if (normalizeRole(user?.role) === 'Admin') return true;
+  return Boolean(user?.permissions?.includes(permission));
+}
+
+function usersRepo(client) {
+  return {
+    async authenticate() {
+      throw new Error('Password login is disabled. Use Supabase login.');
+    },
+    async findActiveByUsername(username) {
+      const user = await findUserByUsername(client, username);
+      if (!user) return null;
+      if (normalizeUserStatus(user.status) !== 'Active') throw new Error('User is inactive');
+      return mapUser(user);
+    },
+    async activateForGoogleLogin(username, verified = {}) {
+      const user = await findUserByUsername(client, username);
+      if (!user) return null;
+      const status = normalizeUserStatus(user.status);
+      if (status === 'Inactive') throw new Error('User is inactive');
+      if (status === 'Expired') throw new Error('Invite expired');
+      if (status === 'Pending') throw new Error('Tai khoan dang cho admin phe duyet');
+      const patch = {};
+      if (verified.authUserId && !user.auth_user_id) patch.auth_user_id = verified.authUserId;
+      if (status === 'Invited') {
+        patch.status = 'Active';
+        patch.accepted_at = new Date().toISOString();
+      }
+      if (Object.keys(patch).length) {
+        const { data, error } = await client
+          .from('app_users')
+          .update(patch)
+          .eq('id', user.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return mapUser(data);
+      }
+      return mapUser(user);
+    },
+    async requestGoogleAccess(input) {
+      const username = normalizeEmail(input.username);
+      if (!username) throw new Error('Username is required');
+      const existing = await findUserByUsername(client, username);
+      if (existing) return mapUser(existing);
+      const bootstrapAdmin = await hasNoAppUsers(client);
+      const role = bootstrapAdmin ? 'Admin' : 'Viewer';
+      const { data, error } = await client
+        .from('app_users')
+        .insert({
+          auth_user_id: input.authUserId || null,
+          username,
+          display_name: input.displayName?.trim() || username,
+          role,
+          status: bootstrapAdmin ? 'Active' : 'Pending',
+          permissions: normalizePermissions([], role),
+          accepted_at: bootstrapAdmin ? new Date().toISOString() : null
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async list() {
+      const { data, error } = await client.from('app_users').select('*').order('username', { ascending: true });
+      if (error) throw error;
+      return data.map(mapUser);
+    },
+    async get(id) {
+      const { data, error } = await client.from('app_users').select('*').eq('id', id).single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async create(input) {
+      const username = normalizeEmail(input.username);
+      if (!username) throw new Error('Username is required');
+      const role = normalizeRole(input.role);
+      const { data, error } = await client
+        .from('app_users')
+        .insert({
+          username,
+          display_name: input.displayName?.trim() || username,
+          role,
+          status: normalizeUserStatus(input.status || 'Active'),
+          permissions: normalizePermissions(input.permissions, role),
+          invitation_sent_at: input.invitationSentAt || null,
+          invite_expires_at: input.inviteExpiresAt || null,
+          accepted_at: input.acceptedAt || null
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async markInvited(id, { sentAt = new Date(), expiresAt = addHours(sentAt, 24) } = {}) {
+      const { data, error } = await client
+        .from('app_users')
+        .update({
+          status: 'Invited',
+          invitation_sent_at: toIso(sentAt),
+          invite_expires_at: toIso(expiresAt),
+          accepted_at: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async update(id, input) {
+      const current = await this.get(id);
+      if (!current) throw new Error('User not found');
+      const role = normalizeRole(input.role || current.role);
+      const { data, error } = await client
+        .from('app_users')
+        .update({
+          display_name: input.displayName?.trim() || current.displayName || current.username,
+          role,
+          status: normalizeUserStatus(input.status || current.status || 'Active'),
+          permissions: input.permissions === undefined
+            ? normalizePermissions(current.permissions, role)
+            : normalizePermissions(input.permissions, role),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async delete(id, currentUserId) {
+      if (String(id) === String(currentUserId)) throw new Error('Cannot delete current user');
+      const { error } = await client.from('app_users').delete().eq('id', id);
+      if (error) throw error;
+    }
+  };
+}
+
+function entryTypesRepo(client) {
+  return {
+    async list({ includeInactive = false } = {}) {
+      let query = client.from('entry_types').select('*').order('sort_order', { ascending: true });
+      if (!includeInactive) query = query.eq('is_active', true);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data.map(mapEntryType);
+    },
+    async get(id) {
+      const { data, error } = await client.from('entry_types').select('*').eq('id', id).single();
+      if (error) throw error;
+      return mapEntryType(data);
+    },
+    async findByName(name) {
+      const types = await this.list({ includeInactive: true });
+      return types.find(type => type.name.toLowerCase() === String(name || '').trim().toLowerCase()) || null;
+    },
+    async create(input) {
+      const name = String(input.name || '').trim();
+      if (!name) throw new Error('Entry type name is required');
+      const { data, error } = await client
+        .from('entry_types')
+        .insert({
+          name,
+          slug: slugify(input.slug || name),
+          description: input.description || '',
+          sort_order: input.sortOrder || await nextTypeSortOrder(client),
+          is_active: input.isActive !== false
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapEntryType(data);
+    },
+    async update(id, input) {
+      const patch = {
+        updated_at: new Date().toISOString()
+      };
+      if (input.name !== undefined) {
+        patch.name = String(input.name || '').trim();
+        patch.slug = slugify(input.slug || input.name);
+      }
+      if (input.description !== undefined) patch.description = input.description || '';
+      if (input.sortOrder !== undefined) patch.sort_order = Number(input.sortOrder) || 0;
+      if (input.isActive !== undefined) patch.is_active = Boolean(input.isActive);
+      const { data, error } = await client.from('entry_types').update(patch).eq('id', id).select().single();
+      if (error) throw error;
+      return mapEntryType(data);
+    },
+    defaults() {
+      return DEFAULT_ENTRY_TYPES;
+    }
+  };
+}
+
+function projectsRepo(client) {
+  return {
+    async list() {
+      const { data, error } = await client
+        .from('projects')
+        .select('*')
+        .is('deleted_at', null)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return data.map(mapProject);
+    },
+    async listByIds(ids = []) {
+      const projectIds = uniqueStrings(ids);
+      if (!projectIds.length) return [];
+      const { data, error } = await client
+        .from('projects')
+        .select('*')
+        .in('id', projectIds)
+        .is('deleted_at', null)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return data.map(mapProject);
+    },
+    async listForUser(user) {
+      if (isAdmin(user)) return await this.list();
+      const memberships = await projectMembershipsRepo(client).listForUser(user.id);
+      return await this.listByIds(memberships);
+    },
+    async create(input) {
+      const vaultId = input.vaultId || await resolveVaultId(client, input.ownerAuthUserId || input.authUserId);
+      const { data, error } = await client
+        .from('projects')
+        .insert({
+          vault_id: vaultId,
+          name: input.name.trim(),
+          description: input.description || '',
+          status: input.status || 'Active'
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapProject(data);
+    },
+    async update(id, input) {
+      const { data, error } = await client
+        .from('projects')
+        .update({
+          name: input.name.trim(),
+          description: input.description || '',
+          status: input.status || 'Active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return mapProject(data);
+    },
+    async delete(id) {
+      const { error } = await client
+        .from('projects')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    }
+  };
+}
+
+function entriesRepo(client, encryptionKey) {
+  return {
+    async listByProject(projectId) {
+      const { data, error } = await client
+        .from('entries')
+        .select('*')
+        .eq('project_id', projectId)
+        .is('deleted_at', null)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return data.map(row => mapEntry(row, encryptionKey));
+    },
+    async listByProjectForUser(projectId) {
+      return await this.listByProject(projectId);
+    },
+    async search(query) {
+      const { data, error } = await client
+        .from('entries')
+        .select('*')
+        .is('deleted_at', null)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const term = String(query || '').toLowerCase();
+      return data
+        .filter(row => !term
+          || String(row.name || '').toLowerCase().includes(term)
+          || String(row.url || '').toLowerCase().includes(term)
+          || String(row.username || '').toLowerCase().includes(term))
+        .map(row => mapEntry(row, encryptionKey));
+    },
+    async searchForUser(query) {
+      return await this.search(query);
+    },
+    async get(id) {
+      const row = await getEntryRow(client, id);
+      return mapEntry(row, encryptionKey);
+    },
+    async getRaw(id) {
+      return await getEntryRow(client, id);
+    },
+    async create(input) {
+      const project = await getProjectRow(client, input.projectId);
+      const { data, error } = await client
+        .from('entries')
+        .insert({
+          vault_id: input.vaultId || project?.vault_id || await resolveVaultId(client, input.ownerAuthUserId || input.authUserId),
+          project_id: input.projectId,
+          entry_type_id: input.typeId || input.entryTypeId || null,
+          name: input.name.trim(),
+          type: input.type || 'Other',
+          environment: input.environment || 'Production',
+          url: input.url || '',
+          username: input.username || '',
+          password_cipher: encryptPayload(input.password || '', encryptionKey),
+          secret_notes_cipher: encryptPayload(input.notes || '', encryptionKey),
+          tags: input.tags || [],
+          status: input.status || 'Active'
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapEntry(data, encryptionKey);
+    },
+    async update(id, input) {
+      const patch = {
+        project_id: input.projectId,
+        entry_type_id: input.typeId || input.entryTypeId || null,
+        name: input.name.trim(),
+        type: input.type || 'Other',
+        environment: input.environment || 'Production',
+        url: input.url || '',
+        username: input.username || '',
+        secret_notes_cipher: encryptPayload(input.notes || '', encryptionKey),
+        tags: input.tags || [],
+        status: input.status || 'Active',
+        updated_at: new Date().toISOString()
+      };
+      if (input.password !== undefined) patch.password_cipher = encryptPayload(input.password || '', encryptionKey);
+      const { data, error } = await client.from('entries').update(patch).eq('id', id).select().single();
+      if (error) throw error;
+      return mapEntry(data, encryptionKey);
+    },
+    async delete(id) {
+      const { error } = await client
+        .from('entries')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    async revealPassword(id) {
+      const row = await getEntryRow(client, id);
+      return decryptPayload(row?.password_cipher, encryptionKey);
+    },
+    async revealPasswordForUser(id) {
+      return await this.revealPassword(id);
+    },
+    async exportForUser(_user, { includePasswords = false } = {}) {
+      const { data, error } = await client.from('entries').select('*').is('deleted_at', null).order('name', { ascending: true });
+      if (error) throw error;
+      return data.map(row => mapEntryExport(row, encryptionKey, includePasswords));
+    }
+  };
+}
+
+function projectMembershipsRepo(client) {
+  return {
+    async listForUser(userId) {
+      const { data, error } = await client.from('project_memberships').select('*').eq('user_id', userId);
+      if (error) throw error;
+      return data.map(row => row.project_id);
+    },
+    async listForProject(projectId) {
+      const { data, error } = await client.from('project_memberships').select('*').eq('project_id', projectId);
+      if (error) throw error;
+      return data.map(row => row.user_id);
+    },
+    async has(userId, projectId) {
+      const ids = await this.listForUser(userId);
+      return ids.some(id => String(id) === String(projectId));
+    },
+    async replaceForUser(userId, projectIds = []) {
+      await client.from('project_memberships').delete().eq('user_id', userId);
+      const rows = uniqueStrings(projectIds).map(projectId => ({ user_id: userId, project_id: projectId }));
+      if (!rows.length) return;
+      const { error } = await client.from('project_memberships').insert(rows);
+      if (error) throw error;
+    },
+    async replaceForProject(projectId, userIds = []) {
+      await client.from('project_memberships').delete().eq('project_id', projectId);
+      const rows = uniqueStrings(userIds).map(userId => ({ user_id: userId, project_id: projectId }));
+      if (!rows.length) return;
+      const { error } = await client.from('project_memberships').insert(rows);
+      if (error) throw error;
+    }
+  };
+}
+
+function detailedPermissionsRepo(client) {
+  return {
+    async get(userId, projectId, entryTypeId) {
+      const rows = await this.listForUser(userId);
+      return rows.find(row => String(row.projectId) === String(projectId) && String(row.entryTypeId) === String(entryTypeId)) || null;
+    },
+    async listForUser(userId) {
+      const { data, error } = await client.from('detailed_permissions').select('*').eq('user_id', userId);
+      if (error) throw error;
+      return data.map(mapPermission);
+    },
+    async listForProject(projectId) {
+      const { data, error } = await client.from('detailed_permissions').select('*').eq('project_id', projectId);
+      if (error) throw error;
+      return data.map(mapPermission);
+    },
+    async upsert(userId, projectId, entryTypeId, permission) {
+      const existing = await this.get(userId, projectId, entryTypeId);
+      const payload = permissionPayload({ userId, projectId, entryTypeId, ...permission });
+      if (existing) {
+        const { data, error } = await client.from('detailed_permissions').update(payload).eq('id', existing.id).select().single();
+        if (error) throw error;
+        return mapPermission(data);
+      }
+      const { data, error } = await client.from('detailed_permissions').insert(payload).select().single();
+      if (error) throw error;
+      return mapPermission(data);
+    },
+    async replaceForUser(userId, permissions = []) {
+      await client.from('detailed_permissions').delete().eq('user_id', userId);
+      await insertPermissions(client, permissions.map(permission => ({ ...permission, userId })));
+    },
+    async replaceForProject(projectId, permissions = []) {
+      await client.from('detailed_permissions').delete().eq('project_id', projectId);
+      await insertPermissions(client, permissions.map(permission => ({ ...permission, projectId })));
+    }
+  };
+}
+
+function activityRepo(client) {
+  return {
+    async log(action, { projectId = null, entryId = null, details = '' } = {}) {
+      const { error } = await client.from('activity_logs').insert({
+        action,
+        entry_id: entryId || null,
+        metadata: { projectId, details }
+      });
+      if (error) throw error;
+    },
+    async list() {
+      const { data, error } = await client.from('activity_logs').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data.map(row => ({
+        id: row.id,
+        action: row.action,
+        projectId: row.metadata?.projectId || null,
+        entryId: row.entry_id || null,
+        details: row.metadata?.details || '',
+        createdAt: row.created_at
+      }));
+    }
+  };
+}
+
+function settingsRepo(client) {
+  return {
+    async getAll() {
+      const { data, error } = await client.from('app_settings').select('*');
+      if (error) throw error;
+      return {
+        autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
+        ...Object.fromEntries(data.map(row => [row.key, row.value]))
+      };
+    },
+    async update(input) {
+      const entries = Object.entries(input || {});
+      for (const [key, value] of entries) {
+        const existing = await client.from('app_settings').select('*').eq('key', key).single();
+        if (existing.data) {
+          const { error } = await client.from('app_settings').update({ value, updated_at: new Date().toISOString() }).eq('key', key);
+          if (error) throw error;
+        } else {
+          const { error } = await client.from('app_settings').insert({ key, value });
+          if (error) throw error;
+        }
+      }
+      return await this.getAll();
+    }
+  };
+}
+
+function exportRepo(repos) {
+  return {
+    async backupJson({ includePasswords = false } = {}) {
+      const [users, projects, entries, settings] = await Promise.all([
+        repos.users.list(),
+        repos.projects.list(),
+        repos.entries.exportForUser({ role: 'Admin' }, { includePasswords }),
+        repos.settings.getAll()
+      ]);
+      return {
+        exportedAt: new Date().toISOString(),
+        counts: {
+          users: users.length,
+          projects: projects.length,
+          entries: entries.length,
+          settings: Object.keys(settings).length
+        },
+        users,
+        projects,
+        entries,
+        settings
+      };
+    }
+  };
+}
+
+async function findUserByUsername(client, username) {
+  const normalized = normalizeEmail(username);
+  if (!normalized) return null;
+  const { data, error } = await client.from('app_users').select('*').eq('username', normalized).single();
+  if (isMissingSingleRowError(error)) return null;
+  if (error) throw error;
+  return data || null;
+}
+
+async function hasNoAppUsers(client) {
+  const { data, error } = await client.from('app_users').select('id').limit(1);
+  if (error) throw error;
+  return !data?.length;
+}
+
+async function getEntryRow(client, id) {
+  const { data, error } = await client.from('entries').select('*').eq('id', id).single();
+  if (error) throw error;
+  if (!data) throw new Error('Entry not found');
+  return data;
+}
+
+async function getProjectRow(client, id) {
+  if (!id) return null;
+  const { data, error } = await client.from('projects').select('*').eq('id', id).single();
+  if (isMissingSingleRowError(error)) return null;
+  if (error) throw error;
+  return data || null;
+}
+
+async function resolveVaultId(client, ownerAuthUserId) {
+  if (!ownerAuthUserId) return null;
+  const existing = await client
+    .from('vaults')
+    .select('*')
+    .eq('owner_id', ownerAuthUserId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (existing.error) throw existing.error;
+  if (existing.data?.[0]) return existing.data[0].id;
+
+  const created = await client
+    .from('vaults')
+    .insert({
+      owner_id: ownerAuthUserId,
+      name: 'Personal',
+      kdf_salt: randomBytes(16).toString('base64')
+    })
+    .select()
+    .single();
+  if (created.error) throw created.error;
+  return created.data.id;
+}
+
+async function insertPermissions(client, permissions) {
+  const rows = permissions.map(permissionPayload);
+  if (!rows.length) return;
+  const { error } = await client.from('detailed_permissions').insert(rows);
+  if (error) throw error;
+}
+
+async function nextTypeSortOrder(client) {
+  const { data, error } = await client.from('entry_types').select('*');
+  if (error) throw error;
+  return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
+}
+
+function mapUser(row) {
+  if (!row) return null;
+  const role = normalizeRole(row.role);
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id || null,
+    username: row.username,
+    displayName: row.display_name || row.username,
+    role,
+    status: normalizeUserStatus(row.status),
+    permissions: normalizePermissions(row.permissions, role),
+    invitationSentAt: row.invitation_sent_at || null,
+    inviteExpiresAt: row.invite_expires_at || null,
+    acceptedAt: row.accepted_at || null,
+    createdAt: row.created_at
+  };
+}
+
+function mapEntryType(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description || '',
+    sortOrder: row.sort_order || 0,
+    isActive: row.is_active !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapProject(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    status: row.status || 'Active',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapEntry(row, encryptionKey) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    typeId: row.entry_type_id || null,
+    entryTypeId: row.entry_type_id || null,
+    name: row.name,
+    type: row.type || 'Other',
+    environment: row.environment || 'Production',
+    url: row.url || '',
+    username: row.username || '',
+    passwordMasked: true,
+    notes: decryptPayload(row.secret_notes_cipher, encryptionKey),
+    status: row.status || 'Active',
+    tags: row.tags || [],
+    permissions: fullEntryPermissions(),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapEntryExport(row, encryptionKey, includePasswords) {
+  const entry = mapEntry(row, encryptionKey);
+  const exported = {
+    projectId: entry.projectId,
+    name: entry.name,
+    type: entry.type,
+    environment: entry.environment,
+    url: entry.url,
+    username: entry.username,
+    notes: entry.notes,
+    tags: entry.tags,
+    status: entry.status
+  };
+  if (includePasswords) exported.password = decryptPayload(row.password_cipher, encryptionKey);
+  return exported;
+}
+
+function mapPermission(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    projectId: row.project_id,
+    entryTypeId: row.entry_type_id,
+    canViewEntry: Boolean(row.can_view_entry),
+    canViewUrl: Boolean(row.can_view_url),
+    canViewUsername: Boolean(row.can_view_username),
+    canRevealPassword: Boolean(row.can_reveal_password),
+    canViewNotes: Boolean(row.can_view_notes),
+    canCreate: Boolean(row.can_create),
+    canEdit: Boolean(row.can_edit),
+    canDelete: Boolean(row.can_delete)
+  };
+}
+
+function permissionPayload(permission) {
+  return {
+    user_id: permission.userId,
+    project_id: permission.projectId,
+    entry_type_id: permission.entryTypeId,
+    can_view_entry: Boolean(permission.canViewEntry),
+    can_view_url: Boolean(permission.canViewUrl),
+    can_view_username: Boolean(permission.canViewUsername),
+    can_reveal_password: Boolean(permission.canRevealPassword),
+    can_view_notes: Boolean(permission.canViewNotes),
+    can_create: Boolean(permission.canCreate),
+    can_edit: Boolean(permission.canEdit),
+    can_delete: Boolean(permission.canDelete),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function fullEntryPermissions() {
+  return {
+    canViewEntry: true,
+    canViewUrl: true,
+    canViewUsername: true,
+    canRevealPassword: true,
+    canViewNotes: true,
+    canCreate: true,
+    canEdit: true,
+    canDelete: true
+  };
+}
+
+function encryptPayload(value, encryptionKey) {
+  return JSON.parse(encryptText(value || '', encryptionKey));
+}
+
+function decryptPayload(value, encryptionKey) {
+  if (!value || !encryptionKey) return '';
+  return decryptText(JSON.stringify(value), encryptionKey);
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeRole(role) {
+  if (role === 'owner') return 'Admin';
+  return ['Admin', 'Manager', 'Viewer'].includes(role) ? role : 'Viewer';
+}
+
+function normalizeUserStatus(status) {
+  return ['Active', 'Inactive', 'Invited', 'Expired', 'Pending'].includes(status) ? status : 'Active';
+}
+
+function normalizePermissions(input, role) {
+  const allowed = new Set(ROLE_PERMISSIONS[role] || []);
+  if (role === 'Admin') return [...allowed];
+  return uniqueStrings(Array.isArray(input) ? input : []).filter(permission => allowed.has(permission));
+}
+
+function isMissingSingleRowError(error) {
+  if (!error) return false;
+  return error.code === 'PGRST116'
+    || /Cannot coerce the result to a single JSON object/i.test(error.message || '');
+}
+
+function uniqueStrings(values) {
+  return [...new Set((values || []).map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function isAdmin(user) {
+  return normalizeRole(user?.role) === 'Admin';
+}
+
+function toIso(value) {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function addHours(value, hours) {
+  return new Date(Date.parse(toIso(value)) + hours * 60 * 60 * 1000);
+}
+
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'type';
+}

@@ -6,7 +6,7 @@
 
 **Architecture:** SQLite remains the local authorization source. `entry_types` normalizes account types, `entries.entry_type_id` relates credentials to a type, and `user_project_type_permissions` stores per-user access rules. Routes call repository helpers that filter and mask data server-side before the frontend renders it.
 
-**Tech Stack:** Node.js ESM, `node:test`, SQLite via `node:sqlite`/`better-sqlite3`, vanilla HTML/CSS/JS.
+**Tech Stack:** Node.js ESM, `node:test`, Supabase, vanilla HTML/CSS/JS.
 
 ---
 

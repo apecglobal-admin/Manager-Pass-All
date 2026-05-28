@@ -1,6 +1,6 @@
 {
   "name": "apecglobal-manager",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
@@ -15,12 +15,10 @@
     "package:win": "electron-builder --win nsis portable",
     "package:win:portable": "electron-builder --win portable",
     "publish:win": "electron-builder --win nsis --publish always",
-    "test": "node --test",
-    "backup": "node scripts/save-backup.js"
+    "test": "node --test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",
-    "better-sqlite3": "^12.10.0",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {

@@ -215,6 +215,32 @@ test('edit form resolves delegated entry type by name without requiring create p
   assert.match(openEntryDialog, /formEntry\.id \? entryTypeIdForEntry\(formEntry\) : firstCreatableEntryTypeId\(\)/);
 });
 
+test('project member UI keeps Supabase UUID identifiers as strings', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const addSelectedProjectMember = app.match(/function addSelectedProjectMember\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const collectDetailedPermissions = app.match(/function collectDetailedPermissions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveMemberPermissionDraft = app.match(/async function saveMemberPermissionDraft\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.doesNotMatch(addSelectedProjectMember, /Number\(/);
+  assert.doesNotMatch(collectDetailedPermissions, /Number\(row\.dataset\.entryTypeId\)/);
+  assert.doesNotMatch(saveMemberPermissionDraft, /Number\(/);
+  assert.match(addSelectedProjectMember, /String\(select\?\.value/);
+  assert.match(saveMemberPermissionDraft, /String\(event\.target\.userId\.value/);
+});
+
+test('empty and restricted account states use permission-aware copy', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const entryListSubtitle = app.match(/function entryListSubtitle\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.doesNotMatch(app, /No user/);
+  assert.match(renderEntries, /entryListSubtitle\(entry\)/);
+  assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này/);
+  assert.match(app, /Chưa có tài khoản trong dự án/);
+  assert.match(entryListSubtitle, /Bị giới hạn/);
+  assert.match(entryListSubtitle, /Chưa có username/);
+});
+
 test('detail view hides notes and tags when note permission is not granted', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';

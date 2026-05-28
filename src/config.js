@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -8,16 +8,11 @@ loadDotEnv();
 
 export const APP_PORT = Number(process.env.PORT || 3000);
 export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
-export const DB_PATH = process.env.DB_PATH || join(DATA_DIR, 'apecglobal-manager.sqlite');
-export const BACKUP_DIR = process.env.BACKUP_DIR || join(DATA_DIR, 'backups');
-export const DEFAULT_ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 export const DEFAULT_AUTO_LOCK_MINUTES = 15;
 export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 export const APP_URL = process.env.APP_URL || `http://localhost:${APP_PORT}`;
-
-mkdirSync(DATA_DIR, { recursive: true });
 
 export function getEncryptionKey() {
   const raw = process.env.APP_SECRET || 'apecglobal-manager-local-development-secret';

@@ -352,13 +352,15 @@ function entryMatchesSelectedType(entry) {
 
 function renderEntries(rows = state.entries) {
   const filtered = rows.filter(entryMatchesSelectedType);
-  $('#emptyState').classList.toggle('hidden', filtered.length > 0);
+  const emptyState = $('#emptyState');
+  emptyState.textContent = emptyEntryMessage(filtered, rows);
+  emptyState.classList.toggle('hidden', filtered.length > 0);
   $('#entryList').innerHTML = filtered.map(entry => `
     <button class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" data-select="${entry.id}">
       <span class="entry-icon">${svgIcon(iconNameForType(entry.type))}<span>${iconForType(entry.type)}</span></span>
       <span class="entry-text">
         <strong>${escapeHtml(entry.name)}</strong>
-        <small>${escapeHtml(entry.username || entry.url || 'No user')}</small>
+        <small>${escapeHtml(entryListSubtitle(entry))}</small>
       </span>
     </button>
   `).join('');
@@ -367,6 +369,26 @@ function renderEntries(rows = state.entries) {
   }
   renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
   bindRowActions();
+}
+
+function emptyEntryMessage(filtered, rows) {
+  if (!currentProject()) return 'Chọn dự án để xem tài khoản';
+  if (!filtered.length && rows.length > 0) return 'Không có tài khoản phù hợp bộ lọc hiện tại';
+  if (state.currentUser?.role !== 'Admin' && !projectTypePermissions().some(permission => permission.canViewEntry)) {
+    return 'Bạn chưa có quyền xem tài khoản trong dự án này';
+  }
+  return 'Chưa có tài khoản trong dự án';
+}
+
+function entryListSubtitle(entry) {
+  const permissions = entry.permissions || {};
+  const canViewUsername = Boolean(permissions.canViewUsername);
+  const canViewUrl = Boolean(permissions.canViewUrl);
+  if (canViewUsername && entry.username) return entry.username;
+  if (canViewUrl && entry.url) return entry.url;
+  if (canViewUsername) return 'Chưa có username';
+  if (canViewUrl) return 'Chưa có URL';
+  return 'Bị giới hạn';
 }
 
 function bindRowActions() {
@@ -447,7 +469,7 @@ function renderDetail(entry) {
     </section>
 
     <section class="meta-card">
-      <div><span>SYNC</span><strong>Tự động điền mới nhất</strong><small>Chưa có dữ liệu</small></div>
+      <div><span>SYNC</span><strong>Trạng thái quyền</strong><small>${entry.permissions?.canViewEntry ? 'Có quyền xem account' : 'Bị giới hạn quyền'}</small></div>
       <div><span>UPD</span><strong>Sửa đổi lần cuối</strong><small>${escapeHtml(entry.updatedAt || '')}</small></div>
       <div><span>NEW</span><strong>Đã tạo</strong><small>${escapeHtml(entry.createdAt || '')}</small></div>
     </section>
@@ -595,10 +617,10 @@ function renderProjectMemberList() {
 
 function addSelectedProjectMember() {
   const select = $('#projectMemberSelect');
-  const userId = Number(select?.value);
+  const userId = String(select?.value || '');
   if (!userId) return;
-  const user = state.users.find(item => Number(item.id) === userId);
-  if (!user || state.projectMemberDraft.some(member => Number(member.userId) === userId)) return;
+  const user = state.users.find(item => String(item.id) === userId);
+  if (!user || state.projectMemberDraft.some(member => String(member.userId) === userId)) return;
   const member = {
     userId: user.id,
     username: user.username,
@@ -984,7 +1006,7 @@ function collectDetailedPermissions() {
   return Array.from(document.querySelectorAll('#memberPermissionMatrix .permission-type-row'))
     .map(row => {
       const permission = {
-        entryTypeId: Number(row.dataset.entryTypeId)
+        entryTypeId: row.dataset.entryTypeId
       };
       row.querySelectorAll('[data-permission-key]').forEach(input => {
         permission[input.dataset.permissionKey] = input.checked;
@@ -996,8 +1018,8 @@ function collectDetailedPermissions() {
 
 async function saveMemberPermissionDraft(event) {
   event.preventDefault();
-  const userId = Number(event.target.userId.value);
-  const member = state.projectMemberDraft.find(item => Number(item.userId) === userId);
+  const userId = String(event.target.userId.value || '');
+  const member = state.projectMemberDraft.find(item => String(item.userId) === userId);
   if (!member) return;
   member.detailedPermissions = collectDetailedPermissions();
   await persistProjectMembers();
