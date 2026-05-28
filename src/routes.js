@@ -8,6 +8,7 @@ const DEFAULT_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 export function createRouter(baseRepos, options = {}) {
   const sessions = new Map();
+  const sessionStore = options.sessionStore || null;
   const reposContext = new AsyncLocalStorage();
   const createReposForAccessToken = options.createReposForAccessToken;
   const repos = new Proxy({}, {
@@ -35,7 +36,18 @@ export function createRouter(baseRepos, options = {}) {
 
   function currentSession(req) {
     const token = parseCookies(req).session;
-    return token ? readSessionCookie(token) || sessions.get(token) || null : null;
+    if (!token) return null;
+    const cookie = readSessionCookie(token);
+    if (!cookie) return sessions.get(token) || null;
+    if (cookie.session) return cookie.session;
+    const session = sessions.get(cookie.id) || sessionStore?.get(cookie.id) || null;
+    if (!session || isExpiredSession(session)) {
+      sessions.delete(cookie.id);
+      sessionStore?.delete(cookie.id);
+      return null;
+    }
+    sessions.set(cookie.id, session);
+    return session;
   }
 
   function currentUser(req) {
@@ -71,37 +83,54 @@ export function createRouter(baseRepos, options = {}) {
     return user;
   }
 
+  function currentSessionId(req) {
+    const token = parseCookies(req).session;
+    if (!token) return null;
+    const cookie = readSessionCookie(token);
+    return cookie?.id || (sessions.has(token) ? token : null);
+  }
+
   function createSession(user, res, sessionData = {}) {
     const token = createSessionToken();
-    const session = { user, ...sessionData };
-    sessions.set(token, session);
-    const cookieValue = signSessionCookie({
-      ...session,
+    const session = {
+      user,
+      ...sessionData,
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
-    });
+    };
+    sessions.set(token, session);
+    sessionStore?.set(token, session);
+    const cookieValue = signSessionCookie(token);
     sendJson(res, 200, { user }, {
       'set-cookie': `session=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${sessionMaxAgeSeconds}`
     });
   }
 
-  function signSessionCookie(payload) {
-    const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-    const signature = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
-    return `v1.${encodedPayload}.${signature}`;
+  function signSessionCookie(sessionId) {
+    const signature = createHmac('sha256', sessionSecret).update(sessionId).digest('base64url');
+    return `v2.${sessionId}.${signature}`;
   }
 
   function readSessionCookie(value) {
     const [version, encodedPayload, signature] = String(value || '').split('.');
-    if (version !== 'v1' || !encodedPayload || !signature) return null;
+    if (!encodedPayload || !signature) return null;
+    if (version === 'v2') {
+      const expected = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
+      return safeEqual(signature, expected) ? { id: encodedPayload } : null;
+    }
+    if (version !== 'v1') return null;
     const expected = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
     if (!safeEqual(signature, expected)) return null;
     try {
       const session = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
-      if (session.exp && session.exp <= Math.floor(Date.now() / 1000)) return null;
-      return session;
+      if (isExpiredSession(session)) return null;
+      return { session };
     } catch {
       return null;
     }
+  }
+
+  function isExpiredSession(session) {
+    return Boolean(session?.exp && session.exp <= Math.floor(Date.now() / 1000));
   }
 
   function safeEqual(a, b) {
@@ -407,8 +436,11 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/auth/logout') {
-        const token = parseCookies(req).session;
-        if (token) sessions.delete(token);
+        const token = currentSessionId(req) || parseCookies(req).session;
+        if (token) {
+          sessions.delete(token);
+          sessionStore?.delete(token);
+        }
         return sendJson(res, 200, { ok: true }, { 'set-cookie': 'session=; Max-Age=0; Path=/' });
       }
 

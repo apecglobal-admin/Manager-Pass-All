@@ -176,6 +176,35 @@ test('signed session cookie survives app restart', async () => {
   }
 });
 
+test('login session cookie stays small when Supabase access token is large', async () => {
+  const largeAccessToken = `token.${'x'.repeat(5000)}.sig`;
+  const app = createApp({
+    repos: createMemoryRepos(),
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: largeAccessToken })
+    });
+    const cookie = login.headers.get('set-cookie');
+
+    assert.equal(login.status, 200);
+    assert.ok(cookie.length < 1024, `session cookie length ${cookie.length} should stay safely below browser limits`);
+  } finally {
+    await app.close();
+  }
+});
+
 test('backup endpoint returns Supabase JSON export without local file paths', async () => {
   const repos = createMemoryRepos();
   const app = createApp({

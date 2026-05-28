@@ -1,8 +1,8 @@
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createReadStream, existsSync } from 'node:fs';
-import { APP_PORT, APP_URL, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
+import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { APP_PORT, APP_URL, DATA_DIR, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
 import { createSupabaseRepositories } from './supabase-repositories.js';
 import { createRouter } from './routes.js';
 import { serveStatic } from './http-utils.js';
@@ -23,7 +23,8 @@ export function createApp({
   repos,
   supabase,
   createSupabaseClient = createClient,
-  createReposForAccessToken
+  createReposForAccessToken,
+  sessionStore = createFileSessionStore()
 } = {}) {
   const appSupabase = supabase || (repos ? null : createServerSupabaseClient(createSupabaseClient));
   const appRepos = repos || createSupabaseRepositories({ supabase: appSupabase, encryptionKey });
@@ -53,7 +54,8 @@ export function createApp({
     appUrl,
     sessionSecret: encryptionKey.toString('base64'),
     repos: appRepos,
-    createReposForAccessToken: scopedReposForAccessToken
+    createReposForAccessToken: scopedReposForAccessToken,
+    sessionStore
   });
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
@@ -94,6 +96,37 @@ export function createApp({
       });
     }
   };
+}
+
+function createFileSessionStore() {
+  const sessionDir = join(DATA_DIR, 'sessions');
+  return {
+    get(id) {
+      try {
+        const file = sessionFilePath(sessionDir, id);
+        if (!file || !existsSync(file)) return null;
+        return JSON.parse(readFileSync(file, 'utf8'));
+      } catch {
+        return null;
+      }
+    },
+    set(id, session) {
+      const file = sessionFilePath(sessionDir, id);
+      if (!file) return;
+      mkdirSync(sessionDir, { recursive: true });
+      writeFileSync(file, JSON.stringify(session), 'utf8');
+    },
+    delete(id) {
+      const file = sessionFilePath(sessionDir, id);
+      if (!file) return;
+      rmSync(file, { force: true });
+    }
+  };
+}
+
+function sessionFilePath(sessionDir, id) {
+  if (!/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return null;
+  return join(sessionDir, `${id}.json`);
 }
 
 function createServerSupabaseClient(createSupabaseClient, { accessToken } = {}) {
