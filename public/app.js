@@ -40,13 +40,15 @@ function bindEvents() {
   $('#addProjectMemberBtn')?.addEventListener('click', addSelectedProjectMember);
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
   $('#entryForm').addEventListener('submit', saveEntry);
+  $('#entryTypeForm')?.addEventListener('submit', saveEntryType);
+  $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
   $('#userRoleSelect').addEventListener('change', syncRolePermissions);
   $('#projectSearch').addEventListener('input', renderProjects);
   $('#globalSearch').addEventListener('input', globalSearch);
   $('#exportJsonBtn').addEventListener('click', () => download('/api/export/json?passwords=1', 'apecglobal-backup.json'));
   $('#exportCsvBtn').addEventListener('click', () => download('/api/export/csv?passwords=1', 'apecglobal-export.csv'));
-  $('#addEntryTypeBtn')?.addEventListener('click', createEntryType);
+  $('#addEntryTypeBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#saveJsonBtn').addEventListener('click', saveJsonBackup);
   $('#importFile').addEventListener('change', importFile);
@@ -120,6 +122,9 @@ async function enterApp() {
 
 async function loadEntryTypes() {
   state.entryTypes = await api('/api/entry-types');
+  if (state.selectedTypeId !== 'All' && !state.entryTypes.some(type => String(type.id) === String(state.selectedTypeId))) {
+    state.selectedTypeId = 'All';
+  }
   renderTypeFilters();
   fillEntryTypes();
 }
@@ -797,16 +802,101 @@ async function importFile(event) {
   event.target.value = '';
 }
 
-async function createEntryType() {
+function openEntryTypeDialog() {
   if (!can('users.manage')) return toast('Bạn không có quyền quản lý loại account');
-  const name = prompt('Tên loại account mới');
-  if (!name?.trim()) return;
-  await api('/api/entry-types', {
-    method: 'POST',
-    body: JSON.stringify({ name: name.trim() })
+  resetEntryTypeForm();
+  renderEntryTypeManager();
+  $('#entryTypeDialog').showModal();
+  focusDialogField('#entryTypeDialog', 'input[name="name"]');
+}
+
+function resetEntryTypeForm() {
+  const form = $('#entryTypeForm');
+  if (!form) return;
+  form.id.value = '';
+  form.name.value = '';
+  form.description.value = '';
+  form.sortOrder.value = '';
+  form.isActive.checked = true;
+  $('#saveEntryTypeBtn').textContent = 'Lưu loại';
+}
+
+function renderEntryTypeManager() {
+  const list = $('#entryTypeList');
+  if (!list) return;
+  list.innerHTML = state.entryTypes.map(type => `
+    <article class="type-manager-card">
+      <div>
+        <strong>${escapeHtml(type.name)}</strong>
+        <small>${escapeHtml(type.description || 'Chưa có mô tả')} - Thứ tự ${Number(type.sortOrder || 0)}</small>
+      </div>
+      <span class="role-chip">${type.isActive ? 'Active' : 'Inactive'}</span>
+      <div class="user-actions">
+        <button type="button" data-edit-entry-type="${type.id}">Sửa</button>
+        <button type="button" data-toggle-entry-type="${type.id}">${type.isActive ? 'Tắt' : 'Bật'}</button>
+      </div>
+    </article>
+  `).join('') || '<p class="form-hint">Chưa có loại account.</p>';
+  document.querySelectorAll('[data-edit-entry-type]').forEach(button => {
+    button.addEventListener('click', () => editEntryType(button.dataset.editEntryType));
   });
-  await loadEntryTypes();
-  toast('Đã thêm loại account');
+  document.querySelectorAll('[data-toggle-entry-type]').forEach(button => {
+    button.addEventListener('click', () => toggleEntryType(button.dataset.toggleEntryType));
+  });
+}
+
+function editEntryType(id) {
+  const type = state.entryTypes.find(item => String(item.id) === String(id));
+  if (!type) return;
+  const form = $('#entryTypeForm');
+  form.id.value = type.id;
+  form.name.value = type.name || '';
+  form.description.value = type.description || '';
+  form.sortOrder.value = Number(type.sortOrder || 0);
+  form.isActive.checked = type.isActive !== false;
+  $('#saveEntryTypeBtn').textContent = 'Lưu thay đổi';
+  focusDialogField('#entryTypeDialog', 'input[name="name"]');
+}
+
+async function toggleEntryType(id) {
+  const type = state.entryTypes.find(item => String(item.id) === String(id));
+  if (!type) return;
+  try {
+    await api(`/api/entry-types/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: !type.isActive })
+    });
+    await loadEntryTypes();
+    renderEntryTypeManager();
+    toast(type.isActive ? 'Đã tắt loại account' : 'Đã bật loại account');
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function saveEntryType(event) {
+  event.preventDefault();
+  const form = event.target;
+  const id = form.id.value;
+  const payload = {
+    name: form.name.value.trim(),
+    description: form.description.value.trim(),
+    sortOrder: form.sortOrder.value ? Number(form.sortOrder.value) : undefined,
+    isActive: form.isActive.checked
+  };
+  if (!payload.name) return toast('Tên loại account là bắt buộc');
+  try {
+    await api(id ? `/api/entry-types/${id}` : '/api/entry-types', {
+      method: id ? 'PATCH' : 'POST',
+      body: JSON.stringify(payload)
+    });
+    await loadEntryTypes();
+    renderEntryTypeManager();
+    resetEntryTypeForm();
+    toast(id ? 'Đã cập nhật loại account' : 'Đã thêm loại account');
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 let autoLockTimer;

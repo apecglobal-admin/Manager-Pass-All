@@ -207,6 +207,36 @@
       </form>
     </dialog>
 
+    <dialog id="entryTypeDialog">
+      <form id="entryTypeForm" method="dialog" class="modal-form wide">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Account types</p>
+            <h3>Quản lý loại account</h3>
+          </div>
+        </div>
+        <input name="id" type="hidden">
+        <section class="form-section compact-section">
+          <div class="section-label">Thông tin loại</div>
+          <div class="grid-2">
+            <label>Tên loại<input name="name" required placeholder="VD: CRM"></label>
+            <label>Thứ tự<input name="sortOrder" type="number" min="0" step="1" placeholder="0"></label>
+          </div>
+          <label>Mô tả<textarea name="description" placeholder="Ghi chú ngắn về loại account"></textarea></label>
+          <label class="inline-check"><input name="isActive" type="checkbox" checked> Đang sử dụng</label>
+        </section>
+        <section class="form-section compact-section">
+          <div class="section-label">Danh sách loại</div>
+          <div id="entryTypeList" class="type-manager-list"></div>
+        </section>
+        <div class="modal-actions">
+          <button type="button" id="resetEntryTypeBtn">Tạo mới</button>
+          <button type="button" data-close-dialog>Hủy</button>
+          <button id="saveEntryTypeBtn" value="default">Lưu loại</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="userDialog">
       <form id="userForm" method="dialog" class="modal-form user-form">
         <div class="modal-head">
