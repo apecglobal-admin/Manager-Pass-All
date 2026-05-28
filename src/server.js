@@ -2,42 +2,42 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReadStream, existsSync } from 'node:fs';
-import { APP_PORT, APP_URL, DB_PATH, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
-import { createDatabase } from './db.js';
-import { createRepositories } from './repositories.js';
+import { APP_PORT, APP_URL, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
+import { createSupabaseRepositories } from './supabase-repositories.js';
 import { createRouter } from './routes.js';
 import { serveStatic } from './http-utils.js';
 import { createClient } from '@supabase/supabase-js';
-import { createSupabaseDataStore } from './supabase-data-store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
 
 export function createApp({
-  dbPath = DB_PATH,
   encryptionKey = getEncryptionKey(),
-  backupDir,
+  authenticateWithPassword,
   verifyGoogleAccessToken,
   inviteUserByEmail,
   notifyUserApproved,
   deleteAuthUserByEmail,
   appUrl = APP_URL,
-  dataStore,
-  dataStoreFactory
+  repos,
+  supabase,
+  createSupabaseClient = createClient
 } = {}) {
-  const db = createDatabase(dbPath);
-  const repos = createRepositories(db, encryptionKey);
-  const route = createRouter(repos, db, {
-    backupDir,
-    verifyGoogleAccessToken,
+  const appSupabase = supabase || (repos ? null : createServerSupabaseClient(createSupabaseClient));
+  const appRepos = repos || createSupabaseRepositories({ supabase: appSupabase, encryptionKey });
+  const route = createRouter(appRepos, {
+    authenticateWithPassword: authenticateWithPassword === undefined
+      ? createSupabasePasswordAuthenticator(createSupabaseClient)
+      : authenticateWithPassword,
+    verifyGoogleAccessToken: verifyGoogleAccessToken === undefined
+      ? createSupabaseTokenVerifier(createSupabaseClient)
+      : verifyGoogleAccessToken,
     inviteUserByEmail,
     notifyUserApproved,
     deleteAuthUserByEmail,
     appUrl,
-    dataStore,
-    dataStoreFactory: dataStoreFactory === undefined
-      ? createDefaultDataStoreFactory({ dbPath, encryptionKey })
-      : dataStoreFactory
+    sessionSecret: encryptionKey.toString('base64'),
+    repos: appRepos
   });
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
@@ -73,7 +73,6 @@ export function createApp({
     close() {
       return new Promise(resolve => {
         server.close(() => {
-          db.close();
           resolve();
         });
       });
@@ -81,15 +80,46 @@ export function createApp({
   };
 }
 
-function createDefaultDataStoreFactory({ dbPath, encryptionKey }) {
-  if (dbPath === ':memory:') return null;
-  return createSupabaseDataStoreFactory(encryptionKey);
+function createServerSupabaseClient(createSupabaseClient) {
+  const adminConfig = getSupabaseAdminConfig();
+  const publicConfig = getPublicSupabaseConfig();
+  const supabaseUrl = adminConfig.supabaseUrl || publicConfig.supabaseUrl;
+  const supabaseKey = adminConfig.serviceRoleKey || publicConfig.supabaseAnonKey;
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.');
+  }
+  return createSupabaseClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
 }
 
-function createSupabaseTokenVerifier() {
+function createSupabasePasswordAuthenticator(createSupabaseClient = createClient) {
   const config = getPublicSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
-  const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+  const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  return async ({ username, password }) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: String(username || '').trim(),
+      password: String(password || '')
+    });
+    if (error) throw error;
+    return {
+      accessToken: data.session?.access_token || '',
+      refreshToken: data.session?.refresh_token || '',
+      id: data.user?.id || '',
+      authUserId: data.user?.id || '',
+      email: data.user?.email || '',
+      name: data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || ''
+    };
+  };
+}
+
+function createSupabaseTokenVerifier(createSupabaseClient = createClient) {
+  const config = getPublicSupabaseConfig();
+  if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
+  const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
   return async accessToken => {
@@ -97,6 +127,7 @@ function createSupabaseTokenVerifier() {
     if (error) throw error;
     return {
       id: data.user?.id || '',
+      authUserId: data.user?.id || '',
       email: data.user?.email || '',
       name: data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || ''
     };
@@ -233,28 +264,6 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
-}
-
-function createSupabaseDataStoreFactory(encryptionKey) {
-  const adminConfig = getSupabaseAdminConfig();
-  if (adminConfig.supabaseUrl && adminConfig.serviceRoleKey) {
-    return session => createSupabaseDataStore({
-      supabaseUrl: adminConfig.supabaseUrl,
-      supabaseKey: adminConfig.serviceRoleKey,
-      accessToken: session.accessToken,
-      encryptionKey,
-      useAccessTokenAuthorization: false
-    });
-  }
-
-  const config = getPublicSupabaseConfig();
-  if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
-  return session => createSupabaseDataStore({
-    supabaseUrl: config.supabaseUrl,
-    supabaseKey: config.supabaseAnonKey,
-    accessToken: session.accessToken,
-    encryptionKey
-  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

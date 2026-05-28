@@ -4,9 +4,9 @@
 
 **Goal:** Build a local web dashboard for managing ApecGlobal project links, accounts, encrypted passwords, import/export, and auto-lock.
 
-**Architecture:** A dependency-light Node.js app serves a REST API and a static dashboard. SQLite is accessed through Node's built-in `node:sqlite` module, keeping the app local and easy to move later. The frontend is vanilla HTML/CSS/JS for fast delivery and low setup risk on this machine.
+**Architecture:** A dependency-light Node.js app serves a REST API and a static dashboard. Current implementation uses Supabase as the persistence layer. The frontend is vanilla HTML/CSS/JS for fast delivery and low setup risk on this machine.
 
-**Tech Stack:** Node.js 24, `node:http`, `node:sqlite`, `node:test`, AES-256-GCM crypto, vanilla browser UI.
+**Tech Stack:** Node.js, `node:http`, Supabase, `node:test`, AES-256-GCM crypto, vanilla browser UI.
 
 ---
 
@@ -15,8 +15,7 @@
 - `package.json`: npm scripts and project metadata.
 - `src/config.js`: app paths, crypto/session constants, defaults.
 - `src/crypto.js`: password hashing, encryption, decryption, token helpers.
-- `src/db.js`: SQLite connection, schema migration, seed admin setup.
-- `src/repositories.js`: focused database functions for users, projects, entries, settings, and activity logs.
+- `src/supabase-repositories.js`: focused Supabase functions for users, projects, entries, settings, and activity logs.
 - `src/http-utils.js`: request parsing, JSON responses, static file serving helpers.
 - `src/routes.js`: REST route handlers.
 - `src/server.js`: HTTP server bootstrap.
@@ -24,7 +23,7 @@
 - `public/styles.css`: dashboard styling.
 - `public/app.js`: frontend behavior.
 - `tests/crypto.test.js`: crypto tests.
-- `tests/repositories.test.js`: database behavior tests.
+- `tests/supabase-repositories.test.js`: Supabase behavior tests.
 - `tests/routes.test.js`: API behavior tests.
 
 ## Task 1: Project Bootstrap And Crypto
@@ -72,27 +71,27 @@ Create CommonJS-free ES modules. `encryptText` stores JSON with `iv`, `tag`, and
 Run: `node --test tests/crypto.test.js`
 Expected: PASS.
 
-## Task 2: SQLite Schema And Repositories
+## Task 2: Supabase Schema And Repositories
 
 **Files:**
-- Create: `src/db.js`
-- Create: `src/repositories.js`
-- Test: `tests/repositories.test.js`
+- Create: `src/supabase-repositories.js`
+- Test: `tests/supabase-repositories.test.js`
 
 - [ ] **Step 1: Write failing repository tests**
 
 ```js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDatabase } from '../src/db.js';
-import { createRepositories } from '../src/repositories.js';
+import { createSupabaseRepositories } from '../src/supabase-repositories.js';
 
-test('creates a project with encrypted entry credentials', () => {
-  const db = createDatabase(':memory:');
-  const repos = createRepositories(db, Buffer.alloc(32, 3));
+test('creates a project with encrypted entry credentials', async () => {
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(),
+    encryptionKey: Buffer.alloc(32, 3)
+  });
 
-  const project = repos.projects.create({ name: 'Apec CRM', description: 'Main CRM', status: 'Active' });
-  const entry = repos.entries.create({
+  const project = await repos.projects.create({ name: 'Apec CRM', description: 'Main CRM', status: 'Active' });
+  const entry = await repos.entries.create({
     projectId: project.id,
     name: 'CRM Admin',
     type: 'Admin',
@@ -105,23 +104,23 @@ test('creates a project with encrypted entry credentials', () => {
     status: 'Active'
   });
 
-  const rows = repos.entries.listByProject(project.id);
+  const rows = await repos.entries.listByProject(project.id);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, 'CRM Admin');
   assert.equal(rows[0].passwordMasked, true);
   assert.equal(rows[0].password, undefined);
-  assert.equal(repos.entries.revealPassword(entry.id), 'very-secret');
+  assert.equal(await repos.entries.revealPassword(entry.id), 'very-secret');
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test tests/repositories.test.js`
-Expected: FAIL because `src/db.js` does not exist.
+Run: `node --test tests/supabase-repositories.test.js`
+Expected: FAIL because `src/supabase-repositories.js` does not exist.
 
-- [ ] **Step 3: Implement schema and repositories**
+- [ ] **Step 3: Implement Supabase repositories**
 
-Create tables from the design spec, including `users`, `projects`, `entries`, `tags`, `entry_tags`, `activity_logs`, and `settings`. Encrypt entry passwords before insert/update.
+Use Supabase tables from the SQL files, including `app_users`, `projects`, `entries`, `entry_types`, `activity_logs`, and `app_settings`. Encrypt entry passwords before insert/update.
 
 - [ ] **Step 4: Run test to verify it passes**
 
