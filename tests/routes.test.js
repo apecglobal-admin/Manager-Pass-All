@@ -2,6 +2,47 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 
+test('server Supabase clients provide a WebSocket transport for packaged Electron', () => {
+  const previousEnv = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+  };
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_ANON_KEY = 'anon-key';
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const calls = [];
+
+  try {
+    assert.doesNotThrow(() => createApp({
+      createSupabaseClient: (url, key, options = {}) => {
+        calls.push({ url, key, options });
+        if (typeof options.realtime?.transport !== 'function') {
+          throw new Error('Node.js 20 detected without native WebSocket support.');
+        }
+        return {
+          auth: {
+            signInWithPassword: async () => ({ data: {}, error: null }),
+            getUser: async () => ({ data: {}, error: null })
+          }
+        };
+      }
+    }));
+
+    assert.equal(calls.length, 3);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('Supabase login, create project, create entry, and reveal password through API', async () => {
   const repos = createMemoryRepos();
   const app = createApp({

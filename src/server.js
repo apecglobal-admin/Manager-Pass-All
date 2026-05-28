@@ -7,6 +7,7 @@ import { createSupabaseRepositories } from './supabase-repositories.js';
 import { createRouter } from './routes.js';
 import { serveStatic } from './http-utils.js';
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
@@ -89,7 +90,7 @@ function createServerSupabaseClient(createSupabaseClient) {
     throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.');
   }
   return createSupabaseClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
 }
 
@@ -97,7 +98,7 @@ function createSupabasePasswordAuthenticator(createSupabaseClient = createClient
   const config = getPublicSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
   const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async ({ username, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -120,7 +121,7 @@ function createSupabaseTokenVerifier(createSupabaseClient = createClient) {
   const config = getPublicSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
   const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async accessToken => {
     const { data, error } = await supabase.auth.getUser(accessToken);
@@ -138,7 +139,7 @@ function createSupabaseInviteService() {
   const config = getSupabaseAdminConfig();
   if (!config.supabaseUrl || !config.serviceRoleKey) return null;
   const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async (email, options) => {
     const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, options);
@@ -151,7 +152,7 @@ function createSupabaseAuthDeleteService() {
   const config = getSupabaseAdminConfig();
   if (!config.supabaseUrl || !config.serviceRoleKey) return null;
   const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async email => {
     const normalized = String(email || '').trim().toLowerCase();
@@ -264,6 +265,13 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function createSupabaseClientOptions() {
+  return {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket }
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
