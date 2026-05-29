@@ -2601,19 +2601,27 @@ label {
 }
 
 .user-card,
-.project-member-card {
+.project-member-card,
+.type-manager-card {
   padding: 16px;
 }
 
 .user-card strong,
-.project-member-card strong {
+.project-member-card strong,
+.type-manager-card strong {
   color: #f8fafc;
 }
 
 .user-card small,
 .user-card p,
-.project-member-card small {
+.project-member-card small,
+.type-manager-card small {
   color: #8fa4bc;
+}
+
+.type-manager-card {
+  background: rgba(15, 23, 42, .72);
+  border-color: rgba(148, 163, 184, .18);
 }
 
 .role-chip {

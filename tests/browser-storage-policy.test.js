@@ -206,6 +206,7 @@ test('type filters match Supabase entries that only carry a type name', () => {
 test('entry type management uses a dialog and refreshes dynamic types', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
   const openEntryTypeDialog = app.match(/function openEntryTypeDialog\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const saveEntryType = app.match(/async function saveEntryType\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
 
@@ -218,6 +219,8 @@ test('entry type management uses a dialog and refreshes dynamic types', () => {
   assert.match(saveEntryType, /method: id \? 'PATCH' : 'POST'/);
   assert.match(saveEntryType, /await loadEntryTypes\(\)/);
   assert.match(saveEntryType, /renderEntryTypeManager\(\)/);
+  assert.match(css, /\.type-manager-card strong[\s\S]+color: #f8fafc/);
+  assert.match(css, /\.type-manager-card[\s\S]+background: rgba\(15, 23, 42, \.72\)/);
 });
 
 test('edit form resolves delegated entry type by name without requiring create permission', () => {
