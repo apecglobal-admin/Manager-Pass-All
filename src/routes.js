@@ -24,6 +24,7 @@ export function createRouter(baseRepos, options = {}) {
   const notifyUserApproved = options.notifyUserApproved;
   const deleteAuthUserByEmail = options.deleteAuthUserByEmail;
   const appUrl = options.appUrl || 'http://localhost:3000';
+  const appDownloadUrl = options.appDownloadUrl || appUrl;
 
   function reposForAccessToken(accessToken) {
     return accessToken && createReposForAccessToken ? createReposForAccessToken(accessToken) : baseRepos;
@@ -319,7 +320,7 @@ export function createRouter(baseRepos, options = {}) {
   async function sendUserInvite(user) {
     if (!inviteUserByEmail) return { inviteSent: false, user };
     await inviteUserByEmail(user.username, {
-      redirectTo: normalizeRedirectUrl(appUrl),
+      redirectTo: normalizeRedirectUrl(appDownloadUrl),
       data: {
         DisplayName: user.displayName,
         Role: user.role
@@ -332,6 +333,7 @@ export function createRouter(baseRepos, options = {}) {
     if (!notifyUserApproved) return false;
     await notifyUserApproved(user, {
       appUrl: normalizeRedirectUrl(appUrl),
+      appDownloadUrl: normalizeRedirectUrl(appDownloadUrl),
       role: user.role,
       permissions: user.permissions
     });
@@ -480,7 +482,7 @@ export function createRouter(baseRepos, options = {}) {
             created = invite.user;
           } catch (error) {
             await repos.users.delete(created.id, user.id);
-            throw new Error(`Cannot send Supabase invite: ${error.message}`);
+            throw new Error(`Cannot send invite email: ${error.message}`);
           }
         }
         if (Array.isArray(input.detailedPermissions)) {
@@ -504,7 +506,7 @@ export function createRouter(baseRepos, options = {}) {
       const userInviteMatch = path.match(/^\/api\/users\/([^/]+)\/invite$/);
       if (userInviteMatch && req.method === 'POST') {
         if (!requirePermission(req, res, 'users.manage')) return true;
-        if (!inviteUserByEmail) return sendJson(res, 503, { error: 'Supabase invite is not configured' });
+        if (!inviteUserByEmail) return sendJson(res, 503, { error: 'Invite email is not configured' });
         const invitedUser = await repos.users.get(decodeURIComponent(userInviteMatch[1]));
         if (!invitedUser) return sendJson(res, 404, { error: 'User not found' });
         const invite = await sendUserInvite(invitedUser);

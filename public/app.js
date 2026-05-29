@@ -1025,7 +1025,7 @@ function openUserDialog(user = {}) {
   passwordField?.classList.toggle('hidden', creating);
   statusField?.classList.toggle('hidden', creating);
   if (inviteHint) {
-    if (creating) inviteHint.textContent = 'Nhập email Google của user. Khi lưu, hệ thống sẽ tạo tài khoản nội bộ và gửi email mời Supabase.';
+    if (creating) inviteHint.textContent = 'Nhập email Google của user. Khi lưu, hệ thống sẽ tạo tài khoản nội bộ và gửi email mời tải app.';
     else if (user.status === 'Pending') inviteHint.textContent = 'Tài khoản Google này đang yêu cầu tham gia. Chuyển trạng thái sang Active và cấp quyền; hệ thống sẽ gửi email thông báo nếu đã cấu hình mail.';
     else inviteHint.textContent = 'Email đăng nhập là định danh dùng để map Google vào quyền nội bộ.';
   }
@@ -1161,7 +1161,7 @@ async function saveUser(event) {
 async function resendUserInvite(id) {
   try {
     const result = await api(`/api/users/${id}/invite`, { method: 'POST' });
-    toast(result.inviteSent ? 'Đã gửi email mời Supabase' : 'Supabase invite chưa được cấu hình');
+    toast(result.inviteSent ? 'Đã gửi email mời tải app' : 'Email mời chưa được cấu hình');
   } catch (error) {
     toast(error.message);
   }

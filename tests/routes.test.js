@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createApp } from '../src/server.js';
+import { buildApprovalEmail, createApp } from '../src/server.js';
 
 test('server Supabase clients provide a WebSocket transport for packaged Electron', () => {
   const previousEnv = {
@@ -34,7 +34,7 @@ test('server Supabase clients provide a WebSocket transport for packaged Electro
       }
     }));
 
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
   } finally {
     for (const [key, value] of Object.entries(previousEnv)) {
       if (value === undefined) delete process.env[key];
@@ -132,6 +132,99 @@ test('password login uses Supabase Auth and creates app session', async () => {
   } finally {
     await app.close();
   }
+});
+
+test('default Supabase invite service sends packaged app download link from user creation', async () => {
+  const previousEnv = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+  };
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_ANON_KEY = 'anon-key';
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const inviteCalls = [];
+  const repos = createMemoryRepos();
+  const app = createApp({
+    repos,
+    appDownloadUrl: 'https://example.com/download',
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    }),
+    authenticateWithPassword: null,
+    createSupabaseClient: (url, key, options = {}) => ({
+      auth: {
+        signInWithOtp: async payload => {
+          inviteCalls.push({ url, key, options, payload });
+          return { data: { user: { email: payload.email } }, error: null };
+        }
+      }
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const created = await fetch(`${base}/api/users`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        username: 'member@example.com',
+        displayName: 'Member',
+        role: 'Viewer',
+        status: 'Invited',
+        permissions: []
+      })
+    });
+    const body = await created.json();
+
+    assert.equal(created.status, 201);
+    assert.equal(body.inviteSent, true);
+    assert.equal(inviteCalls.length, 1);
+    assert.equal(inviteCalls[0].url, 'https://example.supabase.co');
+    assert.equal(inviteCalls[0].key, 'anon-key');
+    assert.equal(inviteCalls[0].payload.email, 'member@example.com');
+    assert.equal(inviteCalls[0].payload.options.emailRedirectTo, 'https://example.com/download/');
+  } finally {
+    await app.close();
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('approval email template points users to packaged app download', () => {
+  const email = buildApprovalEmail({
+    id: 'user-member',
+    username: 'member@example.com',
+    displayName: 'Member',
+    role: 'Viewer',
+    permissions: []
+  }, {
+    appUrl: 'http://localhost:3000/',
+    appDownloadUrl: 'https://example.com/download/'
+  });
+
+  assert.match(email.text, /https:\/\/example\.com\/download\//);
+  assert.match(email.html, /https:\/\/example\.com\/download\//);
+  assert.doesNotMatch(email.text, /http:\/\/localhost:3000/);
+  assert.doesNotMatch(email.html, /http:\/\/localhost:3000/);
 });
 
 test('signed session cookie survives app restart', async () => {
