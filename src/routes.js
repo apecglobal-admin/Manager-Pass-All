@@ -548,7 +548,10 @@ export function createRouter(baseRepos, options = {}) {
         if (String(id) === String(user.id)) throw new Error('Cannot delete current user');
         const existing = await repos.users.get(id);
         if (!existing) return sendJson(res, 404, { error: 'User not found' });
-        const authDeleted = deleteAuthUserByEmail ? await deleteAuthUserByEmail(existing.username) : false;
+        const session = currentSession(req);
+        const authDeleted = deleteAuthUserByEmail
+          ? await deleteAuthUserByEmail(existing.username, { accessToken: session?.accessToken || '' })
+          : false;
         await repos.users.delete(id, user.id);
         for (const [token, session] of sessions.entries()) {
           if (String(session.user?.id) === String(id)) sessions.delete(token);

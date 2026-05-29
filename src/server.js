@@ -24,6 +24,7 @@ export function createApp({
   repos,
   supabase,
   createSupabaseClient = createClient,
+  authDeleteFetch = fetch,
   createReposForAccessToken,
   sessionStore = createFileSessionStore()
 } = {}) {
@@ -49,7 +50,7 @@ export function createApp({
     ? createApprovalNotificationService({ appDownloadUrl })
     : notifyUserApproved;
   const appDeleteAuthUserByEmail = deleteAuthUserByEmail === undefined
-    ? createSupabaseAuthDeleteService(createSupabaseClient)
+    ? createSupabaseAuthDeleteService(createSupabaseClient, { fetchImpl: authDeleteFetch })
     : deleteAuthUserByEmail;
   const route = createRouter(appRepos, {
     authenticateWithPassword: authenticateWithPassword === undefined
@@ -229,31 +230,82 @@ export function createSupabaseInviteService(createSupabaseClient = createClient,
   };
 }
 
-function createSupabaseAuthDeleteService(createSupabaseClient = createClient) {
+function createSupabaseAuthDeleteService(createSupabaseClient = createClient, { fetchImpl = fetch } = {}) {
   const config = getSupabaseAdminConfig();
-  if (!config.supabaseUrl || !config.serviceRoleKey) return null;
-  const supabase = createSupabaseClient(config.supabaseUrl, config.serviceRoleKey, {
-    ...createSupabaseClientOptions()
-  });
-  return async email => {
+  if (config.supabaseUrl && config.serviceRoleKey) {
+    const supabase = createSupabaseClient(config.supabaseUrl, config.serviceRoleKey, {
+      ...createSupabaseClientOptions()
+    });
+    return async email => {
+      const normalized = String(email || '').trim().toLowerCase();
+      if (!normalized) return false;
+
+      for (let page = 1; page <= 100; page += 1) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+        if (error) throw error;
+        const users = data?.users || [];
+        const user = users.find(item => String(item.email || '').trim().toLowerCase() === normalized);
+        if (user) {
+          const deleted = await supabase.auth.admin.deleteUser(user.id);
+          if (deleted.error) throw deleted.error;
+          return true;
+        }
+        if (users.length < 100) return false;
+      }
+
+      throw new Error('Supabase auth user lookup exceeded 100 pages');
+    };
+  }
+
+  const publicConfig = getPublicSupabaseConfig();
+  if (!publicConfig.supabaseUrl || !publicConfig.supabaseAnonKey) return null;
+  return async (email, { accessToken } = {}) => {
     const normalized = String(email || '').trim().toLowerCase();
     if (!normalized) return false;
+    if (!accessToken) throw new Error('Supabase Auth delete requires an admin session token');
 
-    for (let page = 1; page <= 100; page += 1) {
-      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
-      if (error) throw error;
-      const users = data?.users || [];
-      const user = users.find(item => String(item.email || '').trim().toLowerCase() === normalized);
-      if (user) {
-        const deleted = await supabase.auth.admin.deleteUser(user.id);
-        if (deleted.error) throw deleted.error;
-        return true;
-      }
-      if (users.length < 100) return false;
+    const functionUrl = `${publicConfig.supabaseUrl.replace(/\/$/, '')}/functions/v1/delete-auth-user`;
+    let response;
+    try {
+      response = await fetchImpl(functionUrl, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          apikey: publicConfig.supabaseAnonKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ email: normalized })
+      });
+    } catch {
+      return await deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, normalized);
     }
-
-    throw new Error('Supabase auth user lookup exceeded 100 pages');
+    let body = await readJsonResponse(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        return await deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, normalized);
+      }
+      throw new Error(body.error || `Supabase Auth delete failed: ${response.status}`);
+    }
+    return Boolean(body.authDeleted ?? body.ok);
   };
+}
+
+async function deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, email) {
+  const supabase = createSupabaseClient(publicConfig.supabaseUrl, publicConfig.supabaseAnonKey, {
+    ...createSupabaseClientOptions(),
+    global: { headers: { Authorization: `Bearer ${accessToken}` } }
+  });
+  const { data, error } = await supabase.rpc('delete_auth_user_by_email', { target_email: email });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
 }
 
 function createApprovalNotificationService({ appDownloadUrl = APP_DOWNLOAD_URL } = {}) {
