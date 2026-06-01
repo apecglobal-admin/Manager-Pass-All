@@ -60,7 +60,7 @@ async function startLocalServer() {
   if (process.env.APECGLOBAL_APP_URL) return;
   const serverPath = path.join(__dirname, '..', 'src', 'server.js');
   process.env.PORT = desktopPort;
-  process.env.DATA_DIR = process.env.DATA_DIR || app.getPath('userData');
+  process.env.DATA_DIR = process.env.DATA_DIR || path.join(process.env.APPDATA || app.getPath('appData'), 'apecglobal-manager');
   fs.mkdirSync(process.env.DATA_DIR, { recursive: true });
   logFile = path.join(process.env.DATA_DIR, 'desktop-main.log');
   log(`Starting desktop server from ${serverPath}`);
