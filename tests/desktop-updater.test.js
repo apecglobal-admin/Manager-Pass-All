@@ -20,6 +20,11 @@ test('desktop auto update is configured for public GitHub releases', () => {
   assert.equal(pkg.build.portable.artifactName, 'ApecGlobal-Manager-Portable-${version}.${ext}');
   assert.match(main, /electron-updater/);
   assert.match(main, /checkForUpdates/);
+  assert.match(main, /autoDownload\s*=\s*false/);
+  assert.match(main, /update-available/);
+  assert.match(main, /showUpdateAvailableDialog/);
+  assert.match(main, /downloadUpdate/);
+  assert.match(main, /openExternal/);
   assert.match(main, /quitAndInstall/);
   assert.equal(existsSync(workflowPath), true);
   const workflow = readFileSync(workflowPath, 'utf8');

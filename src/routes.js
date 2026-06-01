@@ -1,12 +1,21 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readJson, sendJson, sendText, parseCookies, csvEscape } from './http-utils.js';
 import { createSessionToken } from './crypto.js';
 import { hasPermission } from './supabase-repositories.js';
 
 const DEFAULT_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-export function createRouter(repos, options = {}) {
+export function createRouter(baseRepos, options = {}) {
   const sessions = new Map();
+  const sessionStore = options.sessionStore || null;
+  const reposContext = new AsyncLocalStorage();
+  const createReposForAccessToken = options.createReposForAccessToken;
+  const repos = new Proxy({}, {
+    get(_target, property) {
+      return (reposContext.getStore()?.repos || baseRepos)[property];
+    }
+  });
   const sessionSecret = String(options.sessionSecret || process.env.APP_SECRET || 'apecglobal-manager-local-development-secret');
   const sessionMaxAgeSeconds = Number(options.sessionMaxAgeSeconds || DEFAULT_SESSION_MAX_AGE_SECONDS);
   const authenticateWithPassword = options.authenticateWithPassword;
@@ -15,10 +24,31 @@ export function createRouter(repos, options = {}) {
   const notifyUserApproved = options.notifyUserApproved;
   const deleteAuthUserByEmail = options.deleteAuthUserByEmail;
   const appUrl = options.appUrl || 'http://localhost:3000';
+  const appDownloadUrl = options.appDownloadUrl || appUrl;
+
+  function reposForAccessToken(accessToken) {
+    return accessToken && createReposForAccessToken ? createReposForAccessToken(accessToken) : baseRepos;
+  }
+
+  function useAccessToken(accessToken) {
+    const store = reposContext.getStore();
+    if (store) store.repos = reposForAccessToken(accessToken);
+  }
 
   function currentSession(req) {
     const token = parseCookies(req).session;
-    return token ? readSessionCookie(token) || sessions.get(token) || null : null;
+    if (!token) return null;
+    const cookie = readSessionCookie(token);
+    if (!cookie) return sessions.get(token) || null;
+    if (cookie.session) return cookie.session;
+    const session = sessions.get(cookie.id) || sessionStore?.get(cookie.id) || null;
+    if (!session || isExpiredSession(session)) {
+      sessions.delete(cookie.id);
+      sessionStore?.delete(cookie.id);
+      return null;
+    }
+    sessions.set(cookie.id, session);
+    return session;
   }
 
   function currentUser(req) {
@@ -54,37 +84,54 @@ export function createRouter(repos, options = {}) {
     return user;
   }
 
+  function currentSessionId(req) {
+    const token = parseCookies(req).session;
+    if (!token) return null;
+    const cookie = readSessionCookie(token);
+    return cookie?.id || (sessions.has(token) ? token : null);
+  }
+
   function createSession(user, res, sessionData = {}) {
     const token = createSessionToken();
-    const session = { user, ...sessionData };
-    sessions.set(token, session);
-    const cookieValue = signSessionCookie({
-      ...session,
+    const session = {
+      user,
+      ...sessionData,
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
-    });
+    };
+    sessions.set(token, session);
+    sessionStore?.set(token, session);
+    const cookieValue = signSessionCookie(token);
     sendJson(res, 200, { user }, {
       'set-cookie': `session=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${sessionMaxAgeSeconds}`
     });
   }
 
-  function signSessionCookie(payload) {
-    const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-    const signature = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
-    return `v1.${encodedPayload}.${signature}`;
+  function signSessionCookie(sessionId) {
+    const signature = createHmac('sha256', sessionSecret).update(sessionId).digest('base64url');
+    return `v2.${sessionId}.${signature}`;
   }
 
   function readSessionCookie(value) {
     const [version, encodedPayload, signature] = String(value || '').split('.');
-    if (version !== 'v1' || !encodedPayload || !signature) return null;
+    if (!encodedPayload || !signature) return null;
+    if (version === 'v2') {
+      const expected = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
+      return safeEqual(signature, expected) ? { id: encodedPayload } : null;
+    }
+    if (version !== 'v1') return null;
     const expected = createHmac('sha256', sessionSecret).update(encodedPayload).digest('base64url');
     if (!safeEqual(signature, expected)) return null;
     try {
       const session = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
-      if (session.exp && session.exp <= Math.floor(Date.now() / 1000)) return null;
-      return session;
+      if (isExpiredSession(session)) return null;
+      return { session };
     } catch {
       return null;
     }
+  }
+
+  function isExpiredSession(session) {
+    return Boolean(session?.exp && session.exp <= Math.floor(Date.now() / 1000));
   }
 
   function safeEqual(a, b) {
@@ -273,7 +320,7 @@ export function createRouter(repos, options = {}) {
   async function sendUserInvite(user) {
     if (!inviteUserByEmail) return { inviteSent: false, user };
     await inviteUserByEmail(user.username, {
-      redirectTo: normalizeRedirectUrl(appUrl),
+      redirectTo: normalizeRedirectUrl(appDownloadUrl),
       data: {
         DisplayName: user.displayName,
         Role: user.role
@@ -286,6 +333,7 @@ export function createRouter(repos, options = {}) {
     if (!notifyUserApproved) return false;
     await notifyUserApproved(user, {
       appUrl: normalizeRedirectUrl(appUrl),
+      appDownloadUrl: normalizeRedirectUrl(appDownloadUrl),
       role: user.role,
       permissions: user.permissions
     });
@@ -293,10 +341,11 @@ export function createRouter(repos, options = {}) {
   }
 
   return async function route(req, res) {
-    const url = new URL(req.url, 'http://localhost');
-    const path = url.pathname;
+    return reposContext.run({ repos: reposForAccessToken(currentSession(req)?.accessToken) }, async () => {
+      const url = new URL(req.url, 'http://localhost');
+      const path = url.pathname;
 
-    try {
+      try {
       if (req.method === 'POST' && path === '/api/auth/login') {
         if (!authenticateWithPassword) {
           return sendJson(res, 503, { error: 'Supabase password login is not configured' });
@@ -318,6 +367,7 @@ export function createRouter(repos, options = {}) {
 
         const email = String(verified?.email || '').trim();
         if (!email) return sendJson(res, 401, { error: 'Supabase account has no email' });
+        useAccessToken(verified.accessToken);
 
         let user;
         try {
@@ -360,6 +410,7 @@ export function createRouter(repos, options = {}) {
 
         const email = String(verified?.email || '').trim();
         if (!email) return sendJson(res, 401, { error: 'Supabase account has no verified email' });
+        useAccessToken(body.accessToken);
 
         let user;
         try {
@@ -387,8 +438,11 @@ export function createRouter(repos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/auth/logout') {
-        const token = parseCookies(req).session;
-        if (token) sessions.delete(token);
+        const token = currentSessionId(req) || parseCookies(req).session;
+        if (token) {
+          sessions.delete(token);
+          sessionStore?.delete(token);
+        }
         return sendJson(res, 200, { ok: true }, { 'set-cookie': 'session=; Max-Age=0; Path=/' });
       }
 
@@ -428,7 +482,7 @@ export function createRouter(repos, options = {}) {
             created = invite.user;
           } catch (error) {
             await repos.users.delete(created.id, user.id);
-            throw new Error(`Cannot send Supabase invite: ${error.message}`);
+            throw new Error(`Cannot send invite email: ${error.message}`);
           }
         }
         if (Array.isArray(input.detailedPermissions)) {
@@ -452,7 +506,7 @@ export function createRouter(repos, options = {}) {
       const userInviteMatch = path.match(/^\/api\/users\/([^/]+)\/invite$/);
       if (userInviteMatch && req.method === 'POST') {
         if (!requirePermission(req, res, 'users.manage')) return true;
-        if (!inviteUserByEmail) return sendJson(res, 503, { error: 'Supabase invite is not configured' });
+        if (!inviteUserByEmail) return sendJson(res, 503, { error: 'Invite email is not configured' });
         const invitedUser = await repos.users.get(decodeURIComponent(userInviteMatch[1]));
         if (!invitedUser) return sendJson(res, 404, { error: 'User not found' });
         const invite = await sendUserInvite(invitedUser);
@@ -494,7 +548,10 @@ export function createRouter(repos, options = {}) {
         if (String(id) === String(user.id)) throw new Error('Cannot delete current user');
         const existing = await repos.users.get(id);
         if (!existing) return sendJson(res, 404, { error: 'User not found' });
-        const authDeleted = deleteAuthUserByEmail ? await deleteAuthUserByEmail(existing.username) : false;
+        const session = currentSession(req);
+        const authDeleted = deleteAuthUserByEmail
+          ? await deleteAuthUserByEmail(existing.username, { accessToken: session?.accessToken || '' })
+          : false;
         await repos.users.delete(id, user.id);
         for (const [token, session] of sessions.entries()) {
           if (String(session.user?.id) === String(id)) sessions.delete(token);
@@ -714,10 +771,11 @@ export function createRouter(repos, options = {}) {
 
       sendJson(res, 404, { error: 'Not found' });
       return true;
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-      return true;
-    }
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+        return true;
+      }
+    });
   };
 
   async function projectMembersPayload(projectId) {

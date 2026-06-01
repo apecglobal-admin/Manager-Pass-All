@@ -35,7 +35,7 @@ if (typeof electron === 'string') {
   process.exit(0);
 }
 
-const { app, BrowserWindow, dialog } = electron;
+const { app, BrowserWindow, dialog, shell } = electron;
 
 function createWindow() {
   const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -60,7 +60,7 @@ async function startLocalServer() {
   if (process.env.APECGLOBAL_APP_URL) return;
   const serverPath = path.join(__dirname, '..', 'src', 'server.js');
   process.env.PORT = desktopPort;
-  process.env.DATA_DIR = process.env.DATA_DIR || app.getPath('userData');
+  process.env.DATA_DIR = process.env.DATA_DIR || path.join(process.env.APPDATA || app.getPath('appData'), 'apecglobal-manager');
   fs.mkdirSync(process.env.DATA_DIR, { recursive: true });
   logFile = path.join(process.env.DATA_DIR, 'desktop-main.log');
   log(`Starting desktop server from ${serverPath}`);
@@ -84,11 +84,18 @@ function configureAutoUpdater() {
     return;
   }
 
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  let updateDownloadStarted = false;
 
   autoUpdater.on('checking-for-update', () => log('Checking for desktop updates'));
-  autoUpdater.on('update-available', info => log(`Desktop update available: ${info.version}`));
+  autoUpdater.on('update-available', info => {
+    if (updateDownloadStarted) return;
+    log(`Desktop update available: ${info.version}`);
+    showUpdateAvailableDialog(autoUpdater, info, () => {
+      updateDownloadStarted = true;
+    }).catch(error => log('Failed to show update available dialog', error));
+  });
   autoUpdater.on('update-not-available', info => log(`Desktop app is current: ${info.version}`));
   autoUpdater.on('download-progress', progress => {
     log(`Desktop update download ${Math.round(progress.percent || 0)}%`);
@@ -112,6 +119,33 @@ function configureAutoUpdater() {
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch(error => log('Desktop update check failed', error));
   }, 5000);
+}
+
+async function showUpdateAvailableDialog(autoUpdater, info, onDownloadStarted = () => {}) {
+  const version = info?.version || 'mới';
+  const releaseUrl = getLatestReleaseUrl();
+  const result = await dialog.showMessageBox({
+    type: 'info',
+    title: 'Có bản cập nhật mới',
+    message: `ApecGlobal Manager ${version} đã có sẵn.`,
+    detail: `Phiên bản hiện tại: ${app.getVersion()}\nBạn có muốn tải và cài đặt bản mới không?`,
+    buttons: ['Tải & cài đặt', 'Để sau', 'Mở trang tải'],
+    defaultId: 0,
+    cancelId: 1
+  });
+
+  if (result.response === 0) {
+    onDownloadStarted();
+    await autoUpdater.downloadUpdate();
+    return;
+  }
+  if (result.response === 2) {
+    await shell.openExternal(releaseUrl);
+  }
+}
+
+function getLatestReleaseUrl() {
+  return 'https://github.com/apecglobal-admin/Manager-Pass-All/releases/latest';
 }
 
 app.whenReady().then(() => {

@@ -1,12 +1,13 @@
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createReadStream, existsSync } from 'node:fs';
-import { APP_PORT, APP_URL, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
+import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { APP_DOWNLOAD_URL, APP_PORT, APP_URL, DATA_DIR, getEncryptionKey, getPublicSupabaseConfig, getSupabaseAdminConfig } from './config.js';
 import { createSupabaseRepositories } from './supabase-repositories.js';
 import { createRouter } from './routes.js';
 import { serveStatic } from './http-utils.js';
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
@@ -19,12 +20,38 @@ export function createApp({
   notifyUserApproved,
   deleteAuthUserByEmail,
   appUrl = APP_URL,
+  appDownloadUrl = APP_DOWNLOAD_URL,
   repos,
   supabase,
-  createSupabaseClient = createClient
+  createSupabaseClient = createClient,
+  authDeleteFetch = fetch,
+  createReposForAccessToken,
+  sessionStore = createFileSessionStore()
 } = {}) {
   const appSupabase = supabase || (repos ? null : createServerSupabaseClient(createSupabaseClient));
   const appRepos = repos || createSupabaseRepositories({ supabase: appSupabase, encryptionKey });
+  const scopedReposCache = new Map();
+  const scopedReposForAccessToken = createReposForAccessToken || (repos || supabase
+    ? null
+    : accessToken => {
+        if (!accessToken) return appRepos;
+        if (!scopedReposCache.has(accessToken)) {
+          scopedReposCache.set(accessToken, createSupabaseRepositories({
+            supabase: createServerSupabaseClient(createSupabaseClient, { accessToken }),
+            encryptionKey
+          }));
+        }
+        return scopedReposCache.get(accessToken);
+      });
+  const appInviteUserByEmail = inviteUserByEmail === undefined
+    ? createSupabaseInviteService(createSupabaseClient, { appDownloadUrl })
+    : inviteUserByEmail;
+  const appNotifyUserApproved = notifyUserApproved === undefined
+    ? createApprovalNotificationService({ appDownloadUrl })
+    : notifyUserApproved;
+  const appDeleteAuthUserByEmail = deleteAuthUserByEmail === undefined
+    ? createSupabaseAuthDeleteService(createSupabaseClient, { fetchImpl: authDeleteFetch })
+    : deleteAuthUserByEmail;
   const route = createRouter(appRepos, {
     authenticateWithPassword: authenticateWithPassword === undefined
       ? createSupabasePasswordAuthenticator(createSupabaseClient)
@@ -32,12 +59,15 @@ export function createApp({
     verifyGoogleAccessToken: verifyGoogleAccessToken === undefined
       ? createSupabaseTokenVerifier(createSupabaseClient)
       : verifyGoogleAccessToken,
-    inviteUserByEmail,
-    notifyUserApproved,
-    deleteAuthUserByEmail,
+    inviteUserByEmail: appInviteUserByEmail,
+    notifyUserApproved: appNotifyUserApproved,
+    deleteAuthUserByEmail: appDeleteAuthUserByEmail,
     appUrl,
+    appDownloadUrl,
     sessionSecret: encryptionKey.toString('base64'),
-    repos: appRepos
+    repos: appRepos,
+    createReposForAccessToken: scopedReposForAccessToken,
+    sessionStore
   });
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
@@ -80,7 +110,38 @@ export function createApp({
   };
 }
 
-function createServerSupabaseClient(createSupabaseClient) {
+function createFileSessionStore() {
+  const sessionDir = join(DATA_DIR, 'sessions');
+  return {
+    get(id) {
+      try {
+        const file = sessionFilePath(sessionDir, id);
+        if (!file || !existsSync(file)) return null;
+        return JSON.parse(readFileSync(file, 'utf8'));
+      } catch {
+        return null;
+      }
+    },
+    set(id, session) {
+      const file = sessionFilePath(sessionDir, id);
+      if (!file) return;
+      mkdirSync(sessionDir, { recursive: true });
+      writeFileSync(file, JSON.stringify(session), 'utf8');
+    },
+    delete(id) {
+      const file = sessionFilePath(sessionDir, id);
+      if (!file) return;
+      rmSync(file, { force: true });
+    }
+  };
+}
+
+function sessionFilePath(sessionDir, id) {
+  if (!/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return null;
+  return join(sessionDir, `${id}.json`);
+}
+
+function createServerSupabaseClient(createSupabaseClient, { accessToken } = {}) {
   const adminConfig = getSupabaseAdminConfig();
   const publicConfig = getPublicSupabaseConfig();
   const supabaseUrl = adminConfig.supabaseUrl || publicConfig.supabaseUrl;
@@ -88,8 +149,12 @@ function createServerSupabaseClient(createSupabaseClient) {
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.');
   }
+  const options = createSupabaseClientOptions();
+  if (accessToken && !adminConfig.serviceRoleKey) {
+    options.global = { headers: { Authorization: `Bearer ${accessToken}` } };
+  }
   return createSupabaseClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...options
   });
 }
 
@@ -97,7 +162,7 @@ function createSupabasePasswordAuthenticator(createSupabaseClient = createClient
   const config = getPublicSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
   const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async ({ username, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -120,7 +185,7 @@ function createSupabaseTokenVerifier(createSupabaseClient = createClient) {
   const config = getPublicSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
   const supabase = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    ...createSupabaseClientOptions()
   });
   return async accessToken => {
     const { data, error } = await supabase.auth.getUser(accessToken);
@@ -134,47 +199,116 @@ function createSupabaseTokenVerifier(createSupabaseClient = createClient) {
   };
 }
 
-function createSupabaseInviteService() {
-  const config = getSupabaseAdminConfig();
-  if (!config.supabaseUrl || !config.serviceRoleKey) return null;
-  const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+export function createSupabaseInviteService(createSupabaseClient = createClient, { appDownloadUrl = APP_DOWNLOAD_URL } = {}) {
+  const adminConfig = getSupabaseAdminConfig();
+  if (adminConfig.supabaseUrl && adminConfig.serviceRoleKey) {
+    const supabase = createSupabaseClient(adminConfig.supabaseUrl, adminConfig.serviceRoleKey, {
+      ...createSupabaseClientOptions()
+    });
+    return async (email, options) => {
+      const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, options);
+      if (error) throw error;
+      return data.user;
+    };
+  }
+
+  const publicConfig = getPublicSupabaseConfig();
+  if (!publicConfig.supabaseUrl || !publicConfig.supabaseAnonKey) return null;
+  const supabase = createSupabaseClient(publicConfig.supabaseUrl, publicConfig.supabaseAnonKey, {
+    ...createSupabaseClientOptions()
   });
-  return async (email, options) => {
-    const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, options);
+  return async (email, options = {}) => {
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: options.redirectTo || normalizeDownloadUrl(appDownloadUrl),
+        data: options.data || {}
+      }
+    });
     if (error) throw error;
-    return data.user;
+    return data.user || { email };
   };
 }
 
-function createSupabaseAuthDeleteService() {
+function createSupabaseAuthDeleteService(createSupabaseClient = createClient, { fetchImpl = fetch } = {}) {
   const config = getSupabaseAdminConfig();
-  if (!config.supabaseUrl || !config.serviceRoleKey) return null;
-  const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-  return async email => {
+  if (config.supabaseUrl && config.serviceRoleKey) {
+    const supabase = createSupabaseClient(config.supabaseUrl, config.serviceRoleKey, {
+      ...createSupabaseClientOptions()
+    });
+    return async email => {
+      const normalized = String(email || '').trim().toLowerCase();
+      if (!normalized) return false;
+
+      for (let page = 1; page <= 100; page += 1) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+        if (error) throw error;
+        const users = data?.users || [];
+        const user = users.find(item => String(item.email || '').trim().toLowerCase() === normalized);
+        if (user) {
+          const deleted = await supabase.auth.admin.deleteUser(user.id);
+          if (deleted.error) throw deleted.error;
+          return true;
+        }
+        if (users.length < 100) return false;
+      }
+
+      throw new Error('Supabase auth user lookup exceeded 100 pages');
+    };
+  }
+
+  const publicConfig = getPublicSupabaseConfig();
+  if (!publicConfig.supabaseUrl || !publicConfig.supabaseAnonKey) return null;
+  return async (email, { accessToken } = {}) => {
     const normalized = String(email || '').trim().toLowerCase();
     if (!normalized) return false;
+    if (!accessToken) throw new Error('Supabase Auth delete requires an admin session token');
 
-    for (let page = 1; page <= 100; page += 1) {
-      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
-      if (error) throw error;
-      const users = data?.users || [];
-      const user = users.find(item => String(item.email || '').trim().toLowerCase() === normalized);
-      if (user) {
-        const deleted = await supabase.auth.admin.deleteUser(user.id);
-        if (deleted.error) throw deleted.error;
-        return true;
-      }
-      if (users.length < 100) return false;
+    const functionUrl = `${publicConfig.supabaseUrl.replace(/\/$/, '')}/functions/v1/delete-auth-user`;
+    let response;
+    try {
+      response = await fetchImpl(functionUrl, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          apikey: publicConfig.supabaseAnonKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ email: normalized })
+      });
+    } catch {
+      return await deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, normalized);
     }
-
-    throw new Error('Supabase auth user lookup exceeded 100 pages');
+    let body = await readJsonResponse(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        return await deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, normalized);
+      }
+      throw new Error(body.error || `Supabase Auth delete failed: ${response.status}`);
+    }
+    return Boolean(body.authDeleted ?? body.ok);
   };
 }
 
-function createApprovalNotificationService() {
+async function deleteAuthUserByRpc(createSupabaseClient, publicConfig, accessToken, email) {
+  const supabase = createSupabaseClient(publicConfig.supabaseUrl, publicConfig.supabaseAnonKey, {
+    ...createSupabaseClientOptions(),
+    global: { headers: { Authorization: `Bearer ${accessToken}` } }
+  });
+  const { data, error } = await supabase.rpc('delete_auth_user_by_email', { target_email: email });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+function createApprovalNotificationService({ appDownloadUrl = APP_DOWNLOAD_URL } = {}) {
   const webhookUrl = process.env.APPROVAL_EMAIL_WEBHOOK_URL || '';
   const webhookToken = process.env.APPROVAL_EMAIL_WEBHOOK_TOKEN || '';
   if (webhookUrl) {
@@ -185,7 +319,7 @@ function createApprovalNotificationService() {
           'content-type': 'application/json',
           ...(webhookToken ? { authorization: `Bearer ${webhookToken}` } : {})
         },
-        body: JSON.stringify(buildApprovalEmail(user, options))
+        body: JSON.stringify(buildApprovalEmail(user, { ...options, appDownloadUrl }))
       });
       if (!response.ok) throw new Error(`Approval notification failed: ${response.status}`);
     };
@@ -195,7 +329,7 @@ function createApprovalNotificationService() {
   const from = process.env.APPROVAL_EMAIL_FROM || process.env.EMAIL_FROM || '';
   if (resendApiKey && from) {
     return async (user, options) => {
-      const email = buildApprovalEmail(user, options);
+      const email = buildApprovalEmail(user, { ...options, appDownloadUrl });
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -217,8 +351,8 @@ function createApprovalNotificationService() {
   return null;
 }
 
-function buildApprovalEmail(user, options = {}) {
-  const appUrl = options.appUrl || APP_URL;
+export function buildApprovalEmail(user, options = {}) {
+  const appDownloadUrl = normalizeDownloadUrl(options.appDownloadUrl || APP_DOWNLOAD_URL);
   const displayName = user.displayName || user.username;
   const subject = 'Tài khoản ApecGlobal Manager đã được duyệt';
   const text = [
@@ -226,7 +360,7 @@ function buildApprovalEmail(user, options = {}) {
     '',
     'Tài khoản của bạn đã được admin duyệt vào hệ thống ApecGlobal Manager.',
     `Vai trò: ${user.role}`,
-    `Đăng nhập bằng Google tại: ${appUrl}`,
+    `Tải app ApecGlobal Manager tại: ${appDownloadUrl}`,
     '',
     'Email này chỉ là thông báo, không phải email invite Supabase.'
   ].join('\n');
@@ -234,7 +368,7 @@ function buildApprovalEmail(user, options = {}) {
     <p>Chào ${escapeHtml(displayName)},</p>
     <p>Tài khoản của bạn đã được admin duyệt vào hệ thống <strong>ApecGlobal Manager</strong>.</p>
     <p>Vai trò: <strong>${escapeHtml(user.role)}</strong></p>
-    <p><a href="${escapeAttr(appUrl)}">Đăng nhập bằng Google</a></p>
+    <p><a href="${escapeAttr(appDownloadUrl)}">Tải app ApecGlobal Manager</a></p>
     <p>Email này chỉ là thông báo, không phải email invite Supabase.</p>
   `;
   return {
@@ -242,7 +376,7 @@ function buildApprovalEmail(user, options = {}) {
     subject,
     text,
     html,
-    appUrl,
+    appDownloadUrl,
     user: {
       id: user.id,
       username: user.username,
@@ -264,6 +398,18 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function normalizeDownloadUrl(value) {
+  const raw = String(value || '').trim() || APP_DOWNLOAD_URL;
+  return raw.endsWith('/') ? raw : `${raw}/`;
+}
+
+function createSupabaseClientOptions() {
+  return {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket }
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

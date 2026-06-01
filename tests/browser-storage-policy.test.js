@@ -203,6 +203,26 @@ test('type filters match Supabase entries that only carry a type name', () => {
   assert.match(entryMatchesSelectedType, /selectedType\?\.name/);
 });
 
+test('entry type management uses a dialog and refreshes dynamic types', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+  const openEntryTypeDialog = app.match(/function openEntryTypeDialog\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveEntryType = app.match(/async function saveEntryType\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(html, /id="entryTypeDialog"/);
+  assert.match(app, /addEntryTypeBtn'\)\?\.addEventListener\('click', openEntryTypeDialog\)/);
+  assert.doesNotMatch(app, /prompt\('T[eÃª]n lo[ạa]i account m[ớo]i'/);
+  assert.match(openEntryTypeDialog, /renderEntryTypeManager\(\)/);
+  assert.match(openEntryTypeDialog, /#entryTypeDialog'\)\.showModal\(\)/);
+  assert.match(saveEntryType, /\/api\/entry-types/);
+  assert.match(saveEntryType, /method: id \? 'PATCH' : 'POST'/);
+  assert.match(saveEntryType, /await loadEntryTypes\(\)/);
+  assert.match(saveEntryType, /renderEntryTypeManager\(\)/);
+  assert.match(css, /\.type-manager-card strong[\s\S]+color: #f8fafc/);
+  assert.match(css, /\.type-manager-card[\s\S]+background: rgba\(15, 23, 42, \.72\)/);
+});
+
 test('edit form resolves delegated entry type by name without requiring create permission', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const entryTypeIdForEntry = app.match(/function entryTypeIdForEntry\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';

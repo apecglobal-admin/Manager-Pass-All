@@ -677,6 +677,39 @@ label {
   color: var(--muted);
   margin-top: 2px;
 }
+.type-manager-list {
+  display: grid;
+  gap: 10px;
+}
+.type-manager-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+.type-manager-card strong,
+.type-manager-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type-manager-card small {
+  color: var(--muted);
+  margin-top: 2px;
+}
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inline-check input {
+  width: auto;
+}
 .role-chip {
   width: fit-content;
   color: #2f3b56;
@@ -2568,19 +2601,27 @@ label {
 }
 
 .user-card,
-.project-member-card {
+.project-member-card,
+.type-manager-card {
   padding: 16px;
 }
 
 .user-card strong,
-.project-member-card strong {
+.project-member-card strong,
+.type-manager-card strong {
   color: #f8fafc;
 }
 
 .user-card small,
 .user-card p,
-.project-member-card small {
+.project-member-card small,
+.type-manager-card small {
   color: #8fa4bc;
+}
+
+.type-manager-card {
+  background: rgba(15, 23, 42, .72);
+  border-color: rgba(148, 163, 184, .18);
 }
 
 .role-chip {
