@@ -645,6 +645,77 @@ test('signed session cookie survives app restart', async () => {
   }
 });
 
+test('session endpoint rejects a stale inactive app user session', async () => {
+  const repos = createMemoryRepos();
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    await repos.users.update('user-admin', { status: 'Inactive' });
+
+    const session = await fetch(`${base}/api/session`, { headers: { cookie } });
+    const body = await session.json();
+
+    assert.equal(session.status, 200);
+    assert.equal(body.authenticated, false);
+    assert.equal(body.user, null);
+    assert.match(session.headers.get('set-cookie'), /session=; Max-Age=0; Path=\//);
+  } finally {
+    await app.close();
+  }
+});
+
+test('protected APIs reject a stale session without an auth user id', async () => {
+  const repos = createMemoryRepos();
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    await repos.users.update('user-admin', { authUserId: null });
+
+    const projects = await fetch(`${base}/api/projects`, { headers: { cookie } });
+    const body = await projects.json();
+
+    assert.equal(projects.status, 401);
+    assert.equal(body.error, 'Session locked or expired');
+    assert.match(projects.headers.get('set-cookie'), /session=; Max-Age=0; Path=\//);
+  } finally {
+    await app.close();
+  }
+});
+
 test('current user theme preferences persist in session', async () => {
   const repos = createMemoryRepos();
   const app = createApp({

@@ -51,8 +51,55 @@ export function createRouter(baseRepos, options = {}) {
     return session;
   }
 
-  function currentUser(req) {
-    return currentSession(req)?.user || null;
+  function clearSessionCookieHeader() {
+    return 'session=; Max-Age=0; Path=/';
+  }
+
+  function clearCurrentSession(req) {
+    const token = parseCookies(req).session;
+    if (!token) return;
+    const cookie = readSessionCookie(token);
+    const id = cookie?.id || (sessions.has(token) ? token : null);
+    if (!id) return;
+    sessions.delete(id);
+    sessionStore?.delete(id);
+  }
+
+  function isValidSessionUser(user) {
+    return Boolean(
+      user?.id &&
+      user?.authUserId &&
+      String(user.status || '').toLowerCase() === 'active'
+    );
+  }
+
+  async function validateCurrentSession(req) {
+    const session = currentSession(req);
+    if (!session) return { session: null, invalidated: false };
+    if (!session.user?.id) {
+      clearCurrentSession(req);
+      return { session: null, invalidated: true };
+    }
+
+    let user = null;
+    try {
+      user = await repos.users.get(session.user.id);
+    } catch {
+      user = null;
+    }
+
+    if (!isValidSessionUser(user)) {
+      clearCurrentSession(req);
+      return { session: null, invalidated: true };
+    }
+
+    session.user = user;
+    const id = currentSessionId(req);
+    if (id) {
+      sessions.set(id, session);
+      sessionStore?.set(id, session);
+    }
+    return { session, invalidated: false };
   }
 
   function updateCurrentSessionUser(req, user) {
@@ -66,17 +113,18 @@ export function createRouter(baseRepos, options = {}) {
     }
   }
 
-  function requireUser(req, res) {
-    const user = currentUser(req);
+  async function requireUser(req, res) {
+    const { session } = await validateCurrentSession(req);
+    const user = session?.user || null;
     if (!user) {
-      sendJson(res, 401, { error: 'Session locked or expired' });
+      sendJson(res, 401, { error: 'Session locked or expired' }, { 'set-cookie': clearSessionCookieHeader() });
       return null;
     }
     return user;
   }
 
-  function requirePermission(req, res, permission) {
-    const user = requireUser(req, res);
+  async function requirePermission(req, res, permission) {
+    const user = await requireUser(req, res);
     if (!user) return null;
     if (!hasPermission(user, permission)) {
       sendJson(res, 403, { error: 'Permission denied' });
@@ -85,8 +133,8 @@ export function createRouter(baseRepos, options = {}) {
     return user;
   }
 
-  function requireAdmin(req, res) {
-    const user = requireUser(req, res);
+  async function requireAdmin(req, res) {
+    const user = await requireUser(req, res);
     if (!user) return null;
     if (!isAdminUser(user)) {
       sendJson(res, 403, { error: 'Admin only' });
@@ -338,7 +386,7 @@ export function createRouter(baseRepos, options = {}) {
   }
 
   async function requireEntryAction(req, res, entryId, action) {
-    const user = requireUser(req, res);
+    const user = await requireUser(req, res);
     if (!user) return null;
     if (isAdminUser(user)) return user;
     const existing = await findEntryForPermission(user, entryId);
@@ -486,12 +534,18 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'GET' && path === '/api/session') {
-        const user = currentUser(req);
-        return sendJson(res, 200, { authenticated: Boolean(user), user: user || null });
+        const { session, invalidated } = await validateCurrentSession(req);
+        const user = session?.user || null;
+        return sendJson(
+          res,
+          200,
+          { authenticated: Boolean(user), user: user || null },
+          invalidated ? { 'set-cookie': clearSessionCookieHeader() } : {}
+        );
       }
 
       if (!path.startsWith('/api/')) return false;
-      const authenticated = requireUser(req, res);
+      const authenticated = await requireUser(req, res);
       if (!authenticated) return true;
 
       if (req.method === 'PATCH' && path === '/api/me/preferences') {
@@ -504,7 +558,7 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'GET' && path === '/api/users') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const users = await repos.users.list();
         if (url.searchParams.get('basic') === '1') return sendJson(res, 200, users);
         return sendJson(res, 200, await Promise.all(users.map(async user => ({
@@ -515,7 +569,7 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/users') {
-        const user = requirePermission(req, res, 'users.manage');
+        const user = await requirePermission(req, res, 'users.manage');
         if (!user) return true;
         const input = await readJson(req);
         let created = await repos.users.create({
@@ -553,7 +607,7 @@ export function createRouter(baseRepos, options = {}) {
       const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
       const userInviteMatch = path.match(/^\/api\/users\/([^/]+)\/invite$/);
       if (userInviteMatch && req.method === 'POST') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         if (!inviteUserByEmail) return sendJson(res, 503, { error: 'Invite email is not configured' });
         const invitedUser = await repos.users.get(decodeURIComponent(userInviteMatch[1]));
         if (!invitedUser) return sendJson(res, 404, { error: 'User not found' });
@@ -562,7 +616,7 @@ export function createRouter(baseRepos, options = {}) {
         return sendJson(res, 200, { user: invite.user, inviteSent: invite.inviteSent });
       }
       if (userMatch && req.method === 'PATCH') {
-        const user = requirePermission(req, res, 'users.manage');
+        const user = await requirePermission(req, res, 'users.manage');
         if (!user) return true;
         const id = decodeURIComponent(userMatch[1]);
         const existing = await repos.users.get(id);
@@ -590,7 +644,7 @@ export function createRouter(baseRepos, options = {}) {
         });
       }
       if (userMatch && req.method === 'DELETE') {
-        const user = requirePermission(req, res, 'users.manage');
+        const user = await requirePermission(req, res, 'users.manage');
         if (!user) return true;
         const id = decodeURIComponent(userMatch[1]);
         if (String(id) === String(user.id)) throw new Error('Cannot delete current user');
@@ -613,7 +667,7 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/entry-types') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const type = await repos.entryTypes.create(await readJson(req));
         await repos.activity.log('entry_type.create', { details: type.name });
         return sendJson(res, 201, type);
@@ -621,14 +675,14 @@ export function createRouter(baseRepos, options = {}) {
 
       const entryTypeMatch = path.match(/^\/api\/entry-types\/([^/]+)$/);
       if (entryTypeMatch && req.method === 'PATCH') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const type = await repos.entryTypes.update(decodeURIComponent(entryTypeMatch[1]), await readJson(req));
         await repos.activity.log('entry_type.update', { details: type.name });
         return sendJson(res, 200, type);
       }
 
       if (entryTypeMatch && req.method === 'DELETE') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const id = decodeURIComponent(entryTypeMatch[1]);
         const type = await repos.entryTypes.get(id);
         if (!type) return sendJson(res, 404, { error: 'Entry type not found' });
@@ -642,14 +696,14 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/projects') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const project = await repos.projects.create({ ...await readJson(req), ownerAuthUserId: authenticated.authUserId });
         await repos.activity.log('project.create', { projectId: project.id, details: project.name });
         return sendJson(res, 201, project);
       }
 
       if (req.method === 'PATCH' && path === '/api/projects/reorder') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const input = await readJson(req);
         const ids = Array.isArray(input.ids) ? input.ids : [];
         await repos.projects.reorder(ids);
@@ -662,14 +716,14 @@ export function createRouter(baseRepos, options = {}) {
         return sendJson(res, 200, await listProjectSystemsForUser(decodeURIComponent(projectSystemsMatch[1]), authenticated));
       }
       if (projectSystemsMatch && req.method === 'POST' && !projectSystemsMatch[2]) {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const projectId = decodeURIComponent(projectSystemsMatch[1]);
         const system = await repos.projectSystems.create({ ...await readJson(req), projectId });
         await repos.activity.log('project_system.create', { projectId, details: system.name });
         return sendJson(res, 201, system);
       }
       if (projectSystemsMatch && req.method === 'PATCH' && projectSystemsMatch[2] === 'reorder') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const projectId = decodeURIComponent(projectSystemsMatch[1]);
         const input = await readJson(req);
         const ids = Array.isArray(input.ids) ? input.ids : [];
@@ -678,14 +732,14 @@ export function createRouter(baseRepos, options = {}) {
         return sendJson(res, 200, { ok: true });
       }
       if (projectSystemsMatch && req.method === 'PATCH' && projectSystemsMatch[2]) {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const projectId = decodeURIComponent(projectSystemsMatch[1]);
         const system = await repos.projectSystems.update(decodeURIComponent(projectSystemsMatch[2]), await readJson(req));
         await repos.activity.log('project_system.update', { projectId, details: system.name });
         return sendJson(res, 200, system);
       }
       if (projectSystemsMatch && req.method === 'DELETE' && projectSystemsMatch[2]) {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const projectId = decodeURIComponent(projectSystemsMatch[1]);
         await repos.projectSystems.delete(decodeURIComponent(projectSystemsMatch[2]));
         await repos.activity.log('project_system.delete', { projectId });
@@ -695,11 +749,11 @@ export function createRouter(baseRepos, options = {}) {
       const projectMatch = path.match(/^\/api\/projects\/([^/]+)$/);
       const projectMembersMatch = path.match(/^\/api\/projects\/([^/]+)\/members$/);
       if (projectMembersMatch && req.method === 'GET') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         return sendJson(res, 200, await projectMembersPayload(decodeURIComponent(projectMembersMatch[1])));
       }
       if (projectMembersMatch && req.method === 'PATCH') {
-        if (!requirePermission(req, res, 'users.manage')) return true;
+        if (!await requirePermission(req, res, 'users.manage')) return true;
         const projectId = decodeURIComponent(projectMembersMatch[1]);
         const input = await readJson(req);
         const members = Array.isArray(input.members) ? input.members : [];
@@ -720,13 +774,13 @@ export function createRouter(baseRepos, options = {}) {
         return sendJson(res, 200, { members: await projectMembersPayload(projectId) });
       }
       if (projectMatch && req.method === 'PATCH') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const project = await repos.projects.update(decodeURIComponent(projectMatch[1]), await readJson(req));
         await repos.activity.log('project.update', { projectId: project.id, details: project.name });
         return sendJson(res, 200, project);
       }
       if (projectMatch && req.method === 'DELETE') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const projectId = decodeURIComponent(projectMatch[1]);
         await repos.projects.delete(projectId);
         await repos.activity.log('project.delete', { projectId });
@@ -753,7 +807,7 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/entries') {
-        const user = requireUser(req, res);
+        const user = await requireUser(req, res);
         if (!user) return true;
         const entryInput = await resolveEntryInput(await readJson(req));
         if (!isAdminUser(user) && !await hasDetailedAction(user, entryInput.projectId, {
@@ -811,13 +865,13 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'GET' && path === '/api/export/json') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         await repos.activity.log('export.json');
         return sendJson(res, 200, await repos.export.backupJson({ includePasswords: url.searchParams.get('passwords') === '1' }));
       }
 
       if (req.method === 'GET' && path === '/api/export/csv') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         await repos.activity.log('export.csv');
         const rows = await repos.entries.exportForUser(authenticated, { includePasswords: url.searchParams.get('passwords') === '1' });
         const headers = ['projectId', 'name', 'type', 'environment', 'url', 'username', 'password', 'notes', 'tags', 'status'];
@@ -829,21 +883,21 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'POST' && path === '/api/backups/save-json') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const result = await repos.export.backupJson({ includePasswords: true });
         await repos.activity.log('backup.export_json', { details: result.exportedAt });
         return sendJson(res, 201, result);
       }
 
       if (req.method === 'POST' && path === '/api/import/preview') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const body = await readJson(req);
         const rows = Array.isArray(body.rows) ? body.rows : [];
         return sendJson(res, 200, { rows, count: rows.length });
       }
 
       if (req.method === 'POST' && path === '/api/import/commit') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         const body = await readJson(req);
         const created = [];
         for (const row of body.rows || []) {
@@ -873,7 +927,7 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'PATCH' && path === '/api/settings') {
-        if (!requireAdmin(req, res)) return true;
+        if (!await requireAdmin(req, res)) return true;
         return sendJson(res, 200, await repos.settings.update(await readJson(req)));
       }
 
