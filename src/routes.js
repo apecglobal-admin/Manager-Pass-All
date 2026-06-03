@@ -55,6 +55,17 @@ export function createRouter(baseRepos, options = {}) {
     return currentSession(req)?.user || null;
   }
 
+  function updateCurrentSessionUser(req, user) {
+    const session = currentSession(req);
+    const id = currentSessionId(req);
+    if (!session) return;
+    session.user = user;
+    if (id) {
+      sessions.set(id, session);
+      sessionStore?.set(id, session);
+    }
+  }
+
   function requireUser(req, res) {
     const user = currentUser(req);
     if (!user) {
@@ -144,15 +155,22 @@ export function createRouter(baseRepos, options = {}) {
     return user?.role === 'Admin';
   }
 
-  async function detailedPermissionFor(user, projectId, entryTypeId) {
+  async function detailedPermissionFor(user, projectId, scope) {
     if (isAdminUser(user)) return null;
     if (!await repos.projectMemberships.has(user.id, projectId)) return null;
+    const systemId = typeof scope === 'object' ? scope.systemId : null;
+    const entryTypeId = typeof scope === 'object' ? scope.entryTypeId : scope;
+    if (systemId && repos.detailedPermissions.getBySystem) {
+      const permission = await repos.detailedPermissions.getBySystem(user.id, projectId, systemId);
+      if (permission) return permission;
+    }
+    if (!entryTypeId) return null;
     return await repos.detailedPermissions.get(user.id, projectId, entryTypeId);
   }
 
-  async function hasDetailedAction(user, projectId, entryTypeId, action) {
+  async function hasDetailedAction(user, projectId, scope, action) {
     if (isAdminUser(user)) return true;
-    return Boolean((await detailedPermissionFor(user, projectId, entryTypeId))?.[action]);
+    return Boolean((await detailedPermissionFor(user, projectId, scope))?.[action]);
   }
 
   async function listProjectsForUser(user) {
@@ -177,6 +195,18 @@ export function createRouter(baseRepos, options = {}) {
     return decorated;
   }
 
+  async function listProjectSystemsForUser(projectId, user) {
+    if (!repos.projectSystems) return [];
+    const systems = await repos.projectSystems.listForProject(projectId);
+    if (isAdminUser(user)) return systems;
+    if (!await repos.projectMemberships.has(user.id, projectId)) return [];
+    const permissions = await repos.detailedPermissions.listForProject(projectId);
+    const allowedSystemIds = new Set(permissions
+      .filter(permission => String(permission.userId) === String(user.id) && permission.systemId && permission.canViewEntry)
+      .map(permission => String(permission.systemId)));
+    return systems.filter(system => allowedSystemIds.has(String(system.id)));
+  }
+
   async function searchEntriesForUser(query, user) {
     const entries = repos.entries.searchForUser
       ? await repos.entries.searchForUser(query, user)
@@ -192,10 +222,14 @@ export function createRouter(baseRepos, options = {}) {
 
   async function applyEntryPermission(entry, user, projectId) {
     const entryTypeId = await resolveEntryTypeId(entry);
-    const permission = await detailedPermissionFor(user, projectId || entry.projectId, entryTypeId);
+    const permission = await detailedPermissionFor(user, projectId || entry.projectId, {
+      systemId: entry.systemId || entry.projectSystemId,
+      entryTypeId
+    });
     if (!permission?.canViewEntry) return null;
     return {
       ...entry,
+      systemId: entry.systemId || entry.projectSystemId || null,
       typeId: entry.typeId || entryTypeId,
       url: permission.canViewUrl ? entry.url : '',
       username: permission.canViewUsername ? entry.username : '',
@@ -227,6 +261,7 @@ export function createRouter(baseRepos, options = {}) {
   function projectEntryTypePermissionPayload(permission) {
     return {
       entryTypeId: permission.entryTypeId,
+      systemId: permission.systemId || null,
       canViewEntry: permission.canViewEntry,
       canViewUrl: permission.canViewUrl,
       canViewUsername: permission.canViewUsername,
@@ -276,6 +311,7 @@ export function createRouter(baseRepos, options = {}) {
     if (!entry) return null;
     return {
       projectId: entry.projectId ?? entry.project_id,
+      systemId: entry.systemId ?? entry.projectSystemId ?? entry.system_id ?? null,
       entryTypeId: entry.typeId ?? entry.entryTypeId ?? entry.entry_type_id ?? await resolveEntryTypeId(entry)
     };
   }
@@ -310,7 +346,10 @@ export function createRouter(baseRepos, options = {}) {
       sendJson(res, 404, { error: 'Entry not found' });
       return null;
     }
-    if (!await hasDetailedAction(user, existing.projectId, existing.entryTypeId, action)) {
+    if (!await hasDetailedAction(user, existing.projectId, {
+      systemId: existing.systemId,
+      entryTypeId: existing.entryTypeId
+    }, action)) {
       sendJson(res, 403, { error: 'Permission denied' });
       return null;
     }
@@ -455,6 +494,15 @@ export function createRouter(baseRepos, options = {}) {
       const authenticated = requireUser(req, res);
       if (!authenticated) return true;
 
+      if (req.method === 'PATCH' && path === '/api/me/preferences') {
+        const input = await readJson(req);
+        const updated = repos.users.updatePreferences
+          ? await repos.users.updatePreferences(authenticated.id, input)
+          : await repos.users.update(authenticated.id, { preferences: input });
+        updateCurrentSessionUser(req, updated);
+        return sendJson(res, 200, { user: updated, preferences: updated.preferences || {} });
+      }
+
       if (req.method === 'GET' && path === '/api/users') {
         if (!requirePermission(req, res, 'users.manage')) return true;
         const users = await repos.users.list();
@@ -579,6 +627,16 @@ export function createRouter(baseRepos, options = {}) {
         return sendJson(res, 200, type);
       }
 
+      if (entryTypeMatch && req.method === 'DELETE') {
+        if (!requirePermission(req, res, 'users.manage')) return true;
+        const id = decodeURIComponent(entryTypeMatch[1]);
+        const type = await repos.entryTypes.get(id);
+        if (!type) return sendJson(res, 404, { error: 'Entry type not found' });
+        await repos.entryTypes.delete(id);
+        await repos.activity.log('entry_type.delete', { details: type.name });
+        return sendJson(res, 200, { ok: true });
+      }
+
       if (req.method === 'GET' && path === '/api/projects') {
         return sendJson(res, 200, await listProjectsForUser(authenticated));
       }
@@ -588,6 +646,50 @@ export function createRouter(baseRepos, options = {}) {
         const project = await repos.projects.create({ ...await readJson(req), ownerAuthUserId: authenticated.authUserId });
         await repos.activity.log('project.create', { projectId: project.id, details: project.name });
         return sendJson(res, 201, project);
+      }
+
+      if (req.method === 'PATCH' && path === '/api/projects/reorder') {
+        if (!requireAdmin(req, res)) return true;
+        const input = await readJson(req);
+        const ids = Array.isArray(input.ids) ? input.ids : [];
+        await repos.projects.reorder(ids);
+        await repos.activity.log('project.reorder', { details: `${ids.length} projects` });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      const projectSystemsMatch = path.match(/^\/api\/projects\/([^/]+)\/systems(?:\/([^/]+))?$/);
+      if (projectSystemsMatch && req.method === 'GET' && !projectSystemsMatch[2]) {
+        return sendJson(res, 200, await listProjectSystemsForUser(decodeURIComponent(projectSystemsMatch[1]), authenticated));
+      }
+      if (projectSystemsMatch && req.method === 'POST' && !projectSystemsMatch[2]) {
+        if (!requirePermission(req, res, 'users.manage')) return true;
+        const projectId = decodeURIComponent(projectSystemsMatch[1]);
+        const system = await repos.projectSystems.create({ ...await readJson(req), projectId });
+        await repos.activity.log('project_system.create', { projectId, details: system.name });
+        return sendJson(res, 201, system);
+      }
+      if (projectSystemsMatch && req.method === 'PATCH' && projectSystemsMatch[2] === 'reorder') {
+        if (!requireAdmin(req, res)) return true;
+        const projectId = decodeURIComponent(projectSystemsMatch[1]);
+        const input = await readJson(req);
+        const ids = Array.isArray(input.ids) ? input.ids : [];
+        await repos.projectSystems.reorder(projectId, ids);
+        await repos.activity.log('project_system.reorder', { projectId, details: `${ids.length} systems` });
+        return sendJson(res, 200, { ok: true });
+      }
+      if (projectSystemsMatch && req.method === 'PATCH' && projectSystemsMatch[2]) {
+        if (!requirePermission(req, res, 'users.manage')) return true;
+        const projectId = decodeURIComponent(projectSystemsMatch[1]);
+        const system = await repos.projectSystems.update(decodeURIComponent(projectSystemsMatch[2]), await readJson(req));
+        await repos.activity.log('project_system.update', { projectId, details: system.name });
+        return sendJson(res, 200, system);
+      }
+      if (projectSystemsMatch && req.method === 'DELETE' && projectSystemsMatch[2]) {
+        if (!requirePermission(req, res, 'users.manage')) return true;
+        const projectId = decodeURIComponent(projectSystemsMatch[1]);
+        await repos.projectSystems.delete(decodeURIComponent(projectSystemsMatch[2]));
+        await repos.activity.log('project_system.delete', { projectId });
+        return sendJson(res, 200, { ok: true });
       }
 
       const projectMatch = path.match(/^\/api\/projects\/([^/]+)$/);
@@ -654,7 +756,10 @@ export function createRouter(baseRepos, options = {}) {
         const user = requireUser(req, res);
         if (!user) return true;
         const entryInput = await resolveEntryInput(await readJson(req));
-        if (!isAdminUser(user) && !await hasDetailedAction(user, entryInput.projectId, entryInput.typeId, 'canCreate')) {
+        if (!isAdminUser(user) && !await hasDetailedAction(user, entryInput.projectId, {
+          systemId: entryInput.systemId || entryInput.projectSystemId,
+          entryTypeId: entryInput.typeId
+        }, 'canCreate')) {
           return sendJson(res, 403, { error: 'Permission denied' });
         }
         const entry = await repos.entries.create({ ...entryInput, ownerAuthUserId: user.authUserId });
@@ -671,7 +776,10 @@ export function createRouter(baseRepos, options = {}) {
         const existing = await findEntryForPermission(user, entryId);
         const entryInput = await resolveEntryInput(input, existing);
         const targetProjectId = entryInput.projectId || existing?.projectId;
-        if (!isAdminUser(user) && !await hasDetailedAction(user, targetProjectId, entryInput.typeId, 'canEdit')) {
+        if (!isAdminUser(user) && !await hasDetailedAction(user, targetProjectId, {
+          systemId: entryInput.systemId || entryInput.projectSystemId || existing?.systemId,
+          entryTypeId: entryInput.typeId
+        }, 'canEdit')) {
           return sendJson(res, 403, { error: 'Permission denied' });
         }
         const entry = await repos.entries.update(entryId, entryInput);

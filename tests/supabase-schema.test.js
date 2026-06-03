@@ -31,3 +31,10 @@ test('Supabase admin RLS patch allows admins to read and mutate app data', () =>
   assert.match(sql, /using \(public\.current_app_user_is_admin\(\)\)/i);
   assert.match(sql, /with check \(public\.current_app_user_is_admin\(\)\)/i);
 });
+
+test('Supabase user preferences migration stores per-user UI settings', () => {
+  const sql = readFileSync('sql/009_user_preferences.sql', 'utf8');
+
+  assert.match(sql, /alter table public\.app_users/i);
+  assert.match(sql, /add column if not exists preferences jsonb not null default '\{\}'::jsonb/i);
+});

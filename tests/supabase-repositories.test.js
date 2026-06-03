@@ -102,6 +102,34 @@ test('access request uses security definer app user count when RLS hides other u
   assert.equal(user.status, 'Pending');
 });
 
+test('updates Supabase user theme preferences', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'user-theme',
+    auth_user_id: 'auth-theme',
+    username: 'theme@example.com',
+    display_name: 'Theme User',
+    role: 'Viewer',
+    status: 'Active',
+    permissions: [],
+    preferences: { theme: 'dark' },
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 9)
+  });
+
+  const user = await repos.users.updatePreferences('user-theme', {
+    theme: 'mix',
+    mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+  });
+
+  assert.equal(user.preferences.theme, 'mix');
+  assert.equal(user.preferences.mixTheme.accent, '#22c55e');
+  assert.deepEqual(rows.app_users[0].preferences, user.preferences);
+});
+
 test('lists entry types from Supabase', async () => {
   const rows = createRows();
   rows.entry_types.push({

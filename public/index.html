@@ -1,268 +1,246 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" data-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ApecGlobal Manager</title>
+    <meta name="description" content="ApecGlobal Manager - Credential vault nội bộ">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.png" type="image/png">
     <link rel="apple-touch-icon" href="/assets/logo-mark.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260525-ai1">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css?v=20260603-systems25">
   </head>
   <body>
+
+    <!-- ═══════ LOGIN ═══════ -->
     <main id="loginView" class="login-view">
-      <section class="login-panel">
-        <div class="login-brand">
-          <img src="/assets/logo.jpg" alt="Apec Tech">
-          <p class="eyebrow">ApecGlobal</p>
-          <h1>Manager</h1>
-          <p class="muted">Kho quản lý link, account và password cho các dự án nội bộ.</p>
+      <div class="login-bg" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+      </div>
+      <section class="login-card">
+        <div class="login-left">
+          <span class="pill">● SYSTEM ONLINE</span>
+          <img src="/assets/logo.jpg" alt="Apec" class="login-logo">
+          <h1>Apec<span>Global</span></h1>
+          <p class="tagline">Password Manager &amp; Credential Vault cho dự án nội bộ</p>
+          <div class="features">
+            <div class="feat"><span>🔒</span>End-to-end encrypted</div>
+            <div class="feat"><span>⚡</span>Real-time sync</div>
+            <div class="feat"><span>👥</span>Team RBAC</div>
+          </div>
         </div>
-        <form id="loginForm" class="stack">
-          <label>Username quản trị<input name="username" autocomplete="username" placeholder="Email hoặc username"></label>
-          <label>Password đăng nhập<input name="password" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu"></label>
-          <button type="submit">Đăng nhập</button>
-          <button id="googleLoginBtn" class="google-auth hidden" type="button">Đăng nhập bằng Google</button>
+        <form id="loginForm" class="login-right">
+          <div class="login-header">
+            <h2>Đăng nhập</h2>
+            <p class="muted">Truy cập kho lưu trữ bảo mật</p>
+          </div>
+          <label><span class="label-text">Email / Username</span><input name="username" autocomplete="username" placeholder="you@company.com"></label>
+          <label><span class="label-text">Mật khẩu</span><input name="password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+          <button type="submit" class="btn-accent">Đăng nhập →</button>
+          <button id="googleLoginBtn" class="btn-outline hidden" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Đăng nhập bằng Google
+          </button>
           <p id="loginError" class="error"></p>
         </form>
       </section>
     </main>
 
+    <!-- ═══════ APP — Dashboard layout ═══════ -->
     <main id="appView" class="app hidden">
-      <aside class="sidebar">
-        <div class="brand">
+
+      <!-- Full-width topbar -->
+      <header class="topbar">
+        <div class="topbar-brand">
           <img src="/assets/logo-mark.png" alt="">
-          <div>
-            <strong>Apec Pass</strong>
-            <small>Kho lưu trữ</small>
+          <strong>Apec Pass</strong>
+        </div>
+        <div class="command-box">
+          <span class="cmd-slash">/</span>
+          <input id="globalSearch" class="global-search" placeholder="Tìm account, URL, username...">
+        </div>
+        <div class="toolbar">
+          <button id="importBtn" title="Import">↓ Import</button>
+          <button id="saveJsonBtn" title="Backup">⬇ Backup</button>
+          <button id="exportJsonBtn" title="JSON">JSON</button>
+          <button id="exportCsvBtn" title="CSV">CSV</button>
+        </div>
+        <div class="theme-picker" aria-label="Chọn chế độ giao diện">
+          <button id="themeMenuBtn" class="theme-menu-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span id="themeMenuLabel">Tối</span>
+            <span class="theme-menu-caret">⌄</span>
+          </button>
+          <div id="themeMenu" class="theme-menu hidden" role="listbox" aria-label="Chọn theme">
+            <button type="button" role="option" data-theme-option="light">Sáng</button>
+            <button type="button" role="option" data-theme-option="mix">Mix</button>
+            <button type="button" role="option" data-theme-option="dark">Tối</button>
           </div>
+          <span class="theme-colors" aria-label="Chọn màu Mix">
+            <label class="theme-color-field" title="Màu chính Mix">
+              <input id="mixAccentColor" type="color" value="#14b8a6" aria-label="Màu chính Mix">
+            </label>
+            <label class="theme-color-field" title="Màu phụ Mix">
+              <input id="mixAccent2Color" type="color" value="#f59e0b" aria-label="Màu phụ Mix">
+            </label>
+          </span>
         </div>
-        <div class="vault-title">
-          <span>Kho lưu trữ</span>
-          <button id="newProjectBtn" title="Thêm kho">+</button>
-        </div>
-        <div class="side-actions">
-          <div class="vault-item all active-static">
-            <span class="vault-icon">◆</span>
-            <div><strong>All items</strong><small id="allItemsCount">0 nội dung</small></div>
-            <button>⋮</button>
-          </div>
-        </div>
-        <input id="projectSearch" class="search" placeholder="Tìm dự án">
-        <nav id="projectList" class="project-list"></nav>
-        <div class="sidebar-footer">
-          <div id="currentUserCard" class="account-card"></div>
-          <div class="start-card">
-            <strong>Bắt đầu</strong>
-            <span>○ Chọn dự án của bạn</span>
-            <span>○ Thêm account đầu tiên</span>
-            <span>○ Lưu backup JSON</span>
-          </div>
-          <button id="lockBtn" class="footer-action">Khóa Apec Pass</button>
-          <button id="usersNavBtn" class="footer-action hidden">Người dùng & phân quyền</button>
-        </div>
-      </aside>
+        <div id="currentUserTopbar" class="user-topbar"></div>
+        <button id="lockBtn" class="topbar-icon-btn" title="Khóa">🔒</button>
+        <button id="usersNavBtn" class="topbar-icon-btn hidden" title="Users">👥</button>
+      </header>
 
-      <section class="workspace">
-        <header class="topbar">
-          <div class="topbar-title">
-            <strong id="currentProjectName">Vault</strong>
-            <small id="currentProjectMeta">Secure workspace</small>
+      <!-- Dashboard body -->
+      <div class="dashboard">
+        <!-- Project strip -->
+        <section class="project-strip">
+          <div class="sidebar-head">
+            <span class="sidebar-title">Dự án</span>
+            <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" aria-label="Đóng sidebar" aria-expanded="true"><span class="sidebar-toggle-icon">‹</span></button>
           </div>
-          <div class="command-box">
-            <span>⌕</span>
-            <input id="globalSearch" class="global-search" placeholder="Tìm trong Personal...">
-          </div>
-          <div id="currentUserTopbar" class="user-topbar"></div>
-          <div class="toolbar">
-            <button id="importBtn">Import</button>
-            <button id="addEntryTypeBtn">Loại</button>
-            <button id="saveJsonBtn">Lưu JSON</button>
-            <button id="exportJsonBtn">JSON</button>
-            <button id="exportCsvBtn">CSV</button>
-            <button id="newEntryBtn" disabled>+ Thêm</button>
-          </div>
-        </header>
-
-        <section class="vault-layout">
-          <aside class="items-panel">
-            <div class="list-tools">
-              <div id="typeFilters" class="filters"></div>
+          <div class="strip-left">
+            <button id="newProjectBtn" class="add-chip" title="Thêm dự án"><span class="add-chip-symbol">＋</span><span class="add-chip-text">Thêm dự án</span></button>
+            <div class="all-chip active-static" id="allItemsChip">
+              <span>✦</span>
+              <strong>Tất cả</strong>
+              <small id="allItemsCount">0</small>
             </div>
-            <div class="week-label">Tuần trước</div>
-            <div id="entryList" class="entry-list"></div>
-            <div id="emptyState" class="empty">Chưa có dữ liệu.</div>
-          </aside>
-
-          <section class="detail-panel">
-            <div id="detailPanel" class="detail-empty">
-              <div class="empty-lock">◆</div>
-              <h2>Chọn một account</h2>
-              <p>Account, mật khẩu và đường link sẽ hiển thị ở đây.</p>
-            </div>
-          </section>
+            <input id="projectSearch" class="chip-search" placeholder="Tìm dự án…">
+            <nav id="projectList" class="project-chips"></nav>
+          </div>
         </section>
-      </section>
+
+        <!-- Content header: title + filters + add button -->
+        <section class="content-header">
+          <div class="content-title">
+            <h2 id="currentProjectName">Vault</h2>
+            <small id="currentProjectMeta">Workspace</small>
+          </div>
+          <button id="toggleEntryDeleteModeBtn" class="btn-outline hidden" type="button">Chọn xóa account</button>
+          <button id="deleteSelectedEntriesBtn" class="btn-outline danger hidden" type="button">Xóa account đã chọn</button>
+          <button id="addSystemBtn" class="btn-outline hidden" type="button">＋ Hệ thống</button>
+          <button id="newEntryBtn" class="btn-accent" disabled>＋ Thêm account</button>
+        </section>
+
+        <!-- Content body: entry grid + detail slide-over -->
+        <section class="content-body">
+          <div class="grid-area">
+            <div id="entryList" class="entry-grid"></div>
+            <div id="emptyState" class="empty">Chưa có dữ liệu.</div>
+          </div>
+          <aside class="detail-aside" id="detailAside">
+            <div id="detailPanel" class="detail-empty">
+              <div class="empty-lock">🛡️</div>
+              <h3>Chọn một account</h3>
+              <p>Chi tiết sẽ hiển thị ở đây</p>
+            </div>
+          </aside>
+        </section>
+      </div>
+
+      <!-- Hidden elements needed by JS -->
+      <div id="currentUserCard" class="account-card" style="display:none"></div>
     </main>
 
+    <!-- ═══════ DIALOGS ═══════ -->
     <dialog id="projectDialog">
       <form id="projectForm" method="dialog" class="modal-form">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Project</p>
-            <h3>Dự án / Sản phẩm</h3>
-          </div>
-        </div>
+        <div class="modal-head"><h3>Dự án</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="id" type="hidden">
-        <label>Tên dự án<input name="name" required placeholder="VD: Apec CRM"></label>
-        <label>Mô tả<textarea name="description" placeholder="Ghi chú ngắn về dự án"></textarea></label>
-        <label>Trạng thái<select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
-        <div class="modal-actions">
-          <button type="button" data-close-dialog>Hủy</button>
-          <button id="saveProjectBtn" value="default">Lưu</button>
-        </div>
+        <label><span class="label-text">Tên dự án</span><input name="name" required placeholder="VD: Apec CRM"></label>
+        <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú ngắn"></textarea></label>
+        <label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveProjectBtn" class="btn-accent" value="default">Lưu</button></div>
       </form>
     </dialog>
-
     <dialog id="projectMembersDialog">
-      <form id="projectMembersForm" method="dialog" class="modal-form wide project-form">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Project members</p>
-            <h3 id="projectMembersTitle">Thành viên dự án</h3>
-          </div>
-        </div>
+      <form id="projectMembersForm" method="dialog" class="modal-form wide">
+        <div class="modal-head"><h3 id="projectMembersTitle">Thành viên dự án</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="projectId" type="hidden">
-        <section id="projectMembersSection" class="form-section compact-section hidden">
-          <div class="section-label">Thành viên dự án và quyền chi tiết</div>
-          <div class="member-add-row">
-            <label>Chọn user để thêm vào dự án<select id="projectMemberSelect"></select></label>
-            <button id="addProjectMemberBtn" type="button">Thêm thành viên</button>
-          </div>
+        <section id="projectMembersSection" class="form-section hidden">
+          <div class="section-label">THÀNH VIÊN</div>
+          <div class="member-add-row"><label><span class="label-text">Chọn user</span><select id="projectMemberSelect"></select></label><button id="addProjectMemberBtn" type="button" class="btn-accent">Thêm</button></div>
           <div id="projectMemberList" class="project-member-list"></div>
         </section>
-        <div class="modal-actions">
-          <button type="button" data-close-dialog>Hủy</button>
-        </div>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button></div>
       </form>
     </dialog>
-
+    <dialog id="projectSystemDialog">
+      <form id="projectSystemForm" method="dialog" class="modal-form">
+        <div class="modal-head"><h3>Hệ thống / Sản phẩm</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
+        <input name="id" type="hidden">
+        <input name="projectId" type="hidden">
+        <label><span class="label-text">Tên hệ thống</span><input name="name" required placeholder="VD: Website chính, CMS quản trị"></label>
+        <div class="grid-2">
+          <label><span class="label-text">Loại hệ thống</span><span class="system-type-control"><select id="projectSystemTypeSelect" name="type"></select><button id="manageSystemTypesBtn" class="btn-outline" type="button">+ Loại</button></span></label>
+          <label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
+        </div>
+        <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú ngắn"></textarea></label>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveProjectSystemBtn" class="btn-accent" value="default">Lưu hệ thống</button></div>
+        <section class="form-section compact-section"><div class="section-label">DANH SÁCH HỆ THỐNG</div><div id="projectSystemList" class="type-manager-list"></div></section>
+      </form>
+    </dialog>
     <dialog id="memberPermissionDialog">
       <form id="memberPermissionForm" method="dialog" class="modal-form wide">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Project member</p>
-            <h3 id="memberPermissionTitle">Phân quyền thành viên</h3>
-          </div>
-        </div>
-        <input name="userId" type="hidden">
-        <div id="memberPermissionMatrix" class="permission-matrix"></div>
-        <div class="modal-actions">
-          <button type="button" data-close-dialog>Hủy</button>
-          <button id="saveMemberPermissionBtn" value="default">Lưu quyền</button>
-        </div>
+        <div class="modal-head"><h3 id="memberPermissionTitle">Phân quyền</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
+        <input name="userId" type="hidden"><div id="memberPermissionMatrix" class="permission-matrix"></div>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveMemberPermissionBtn" class="btn-accent" value="default">Lưu quyền</button></div>
       </form>
     </dialog>
-
     <dialog id="entryDialog">
       <form id="entryForm" method="dialog" class="modal-form wide account-form">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Credential</p>
-            <h3>Account / Link</h3>
-          </div>
-          <span class="secure-chip">Encrypted at rest</span>
-        </div>
+        <div class="modal-head"><h3>Account / Link</h3><div style="display:flex;gap:8px;align-items:center"><span class="secure-chip">🔐 Encrypted</span><button type="button" class="close-x" data-close-dialog>✕</button></div></div>
         <input name="id" type="hidden">
-        <div class="form-section">
-          <div class="section-label">Thông tin chính</div>
-          <label>Tên mục<input name="name" required placeholder="VD: Admin Portal"></label>
-          <div class="grid-3">
-            <label>Loại<select name="typeId" id="entryTypeSelect"></select></label>
-            <label>Môi trường<select name="environment"><option>Production</option><option>Staging</option><option>Development</option><option>Testing</option><option>Other</option></select></label>
-            <label>Trạng thái<select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
-          </div>
+        <div class="form-section"><div class="section-label">THÔNG TIN</div>
+          <label><span class="label-text">Tên</span><input name="name" required placeholder="Admin Portal"></label>
+          <input name="systemId" id="entrySystemSelect" type="hidden">
+          <select name="typeId" id="entryTypeSelect" hidden></select>
+          <div class="grid-2"><label><span class="label-text">Môi trường</span><select name="environment"><option>Production</option><option>Staging</option><option>Development</option><option>Testing</option><option>Other</option></select></label><label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label></div>
         </div>
-
-        <div class="form-section">
-          <div class="section-label">Truy cập</div>
-          <label>URL<input name="url" placeholder="https://"></label>
-          <div class="grid-2">
-            <label>Username<input name="username" placeholder="email / username"></label>
-            <label>Password<input name="password" type="password" placeholder="Để trống khi sửa nếu không đổi"></label>
-          </div>
+        <div class="form-section"><div class="section-label">TRUY CẬP</div>
+          <label><span class="label-text">URL</span><input name="url" placeholder="https://"></label>
+          <div class="grid-2"><label><span class="label-text">Username</span><input name="username" placeholder="email / user"></label><label><span class="label-text">Password</span><input name="password" type="password" placeholder="Để trống nếu không đổi"></label></div>
         </div>
-
         <div class="form-section compact-section">
-          <label>Tags<input name="tags" placeholder="crm, admin, production"></label>
-          <label>Ghi chú<textarea name="notes" placeholder="Ghi chú nội bộ, người phụ trách, điều kiện truy cập"></textarea></label>
+          <label><span class="label-text">Tags</span><input name="tags" placeholder="crm, admin"></label>
+          <label><span class="label-text">Ghi chú</span><textarea name="notes" placeholder="Ghi chú nội bộ"></textarea></label>
         </div>
-        <div class="modal-actions">
-          <button type="button" data-close-dialog>Hủy</button>
-          <button id="saveEntryBtn" value="default">Lưu</button>
-        </div>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveEntryBtn" class="btn-accent" value="default">Lưu</button></div>
       </form>
     </dialog>
-
     <dialog id="entryTypeDialog">
       <form id="entryTypeForm" method="dialog" class="modal-form wide">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Account types</p>
-            <h3>Quản lý loại account</h3>
-          </div>
-        </div>
+        <div class="modal-head"><h3>Loại hệ thống</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="id" type="hidden">
-        <section class="form-section compact-section">
-          <div class="section-label">Thông tin loại</div>
-          <div class="grid-2">
-            <label>Tên loại<input name="name" required placeholder="VD: CRM"></label>
-            <label>Thứ tự<input name="sortOrder" type="number" min="0" step="1" placeholder="0"></label>
+        <section class="form-section compact-section entry-type-editor">
+          <div class="entry-type-form-head">
+            <div class="section-label">LOẠI MỚI</div>
+            <div class="entry-type-form-actions">
+              <button type="button" class="btn-outline" data-close-dialog>Hủy</button>
+              <button id="saveEntryTypeBtn" class="btn-accent" value="default">Lưu loại</button>
+            </div>
           </div>
-          <label>Mô tả<textarea name="description" placeholder="Ghi chú ngắn về loại account"></textarea></label>
+          <div class="grid-2"><label><span class="label-text">Tên loại</span><input name="name" required placeholder="VD: CRM, ERP, Landing page"></label><label><span class="label-text">Thứ tự</span><input name="sortOrder" type="number" min="0" step="1" placeholder="0"></label></div>
+          <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú"></textarea></label>
           <label class="inline-check"><input name="isActive" type="checkbox" checked> Đang sử dụng</label>
         </section>
-        <section class="form-section compact-section">
-          <div class="section-label">Danh sách loại</div>
-          <div id="entryTypeList" class="type-manager-list"></div>
-        </section>
-        <div class="modal-actions">
-          <button type="button" id="resetEntryTypeBtn">Tạo mới</button>
-          <button type="button" data-close-dialog>Hủy</button>
-          <button id="saveEntryTypeBtn" value="default">Lưu loại</button>
-        </div>
+        <section class="form-section compact-section"><div class="section-label">DANH SÁCH</div><div id="entryTypeList" class="type-manager-list"></div></section>
       </form>
     </dialog>
-
     <dialog id="userDialog">
-      <form id="userForm" method="dialog" class="modal-form user-form">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Access control</p>
-            <h3>Người dùng</h3>
-          </div>
-        </div>
+      <form id="userForm" method="dialog" class="modal-form">
+        <div class="modal-head"><h3>Người dùng</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="id" type="hidden">
-        <p id="userInviteHint" class="form-hint">Khi lưu, hệ thống sẽ tạo user và gửi email mời tải app.</p>
-        <div class="grid-2">
-          <label>Email đăng nhập<input name="username" type="email" required autocomplete="email" placeholder="vd: user@company.com"></label>
-          <label>Tên hiển thị<input name="displayName" placeholder="vd: Trưởng dự án"></label>
-        </div>
-        <div class="grid-2">
-          <label>Mật khẩu<input name="password" type="password" placeholder="Để trống khi sửa nếu không đổi"></label>
-          <label>Trạng thái<select name="status"><option>Pending</option><option>Invited</option><option>Active</option><option>Expired</option><option>Inactive</option></select></label>
-        </div>
-        <label>Vai trò<select name="role" id="userRoleSelect"><option>Admin</option><option>Manager</option><option>Viewer</option></select></label>
-        <div class="permission-grid">
-          <label><input type="checkbox" name="permissions" value="users.manage"> Quản lý phân quyền</label>
-        </div>
-        <div class="modal-actions">
-          <button type="button" data-close-dialog>Hủy</button>
-          <button id="saveUserBtn" value="default">Lưu</button>
-        </div>
+        <p id="userInviteHint" class="form-hint">Hệ thống sẽ tạo user và gửi email mời.</p>
+        <div class="grid-2"><label><span class="label-text">Email</span><input name="username" type="email" required autocomplete="email" placeholder="user@company.com"></label><label><span class="label-text">Tên hiển thị</span><input name="displayName" placeholder="Trưởng dự án"></label></div>
+        <div class="grid-2"><label><span class="label-text">Mật khẩu</span><input name="password" type="password" placeholder="Để trống nếu không đổi"></label><label><span class="label-text">Trạng thái</span><select name="status"><option>Pending</option><option>Invited</option><option>Active</option><option>Expired</option><option>Inactive</option></select></label></div>
+        <label><span class="label-text">Vai trò</span><select name="role" id="userRoleSelect"><option>Admin</option><option>Manager</option><option>Viewer</option></select></label>
+        <div class="permission-grid"><label><input type="checkbox" name="permissions" value="users.manage"> Quản lý phân quyền</label></div>
+        <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveUserBtn" class="btn-accent" value="default">Lưu</button></div>
       </form>
     </dialog>
 
@@ -270,6 +248,6 @@
     <div id="toast" class="toast"></div>
     <script src="/config.js"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260525-ai1"></script>
+    <script src="/app.js?v=20260603-systems25"></script>
   </body>
 </html>

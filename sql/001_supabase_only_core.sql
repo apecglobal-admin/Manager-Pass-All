@@ -22,6 +22,7 @@ create table if not exists public.projects (
   name text not null,
   description text not null default '',
   status text not null default 'Active',
+  sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -67,6 +68,7 @@ create table if not exists public.app_users (
   role text not null default 'Viewer',
   status text not null default 'Pending',
   permissions text[] not null default '{}',
+  preferences jsonb not null default '{}'::jsonb,
   invitation_sent_at timestamptz,
   invite_expires_at timestamptz,
   accepted_at timestamptz,

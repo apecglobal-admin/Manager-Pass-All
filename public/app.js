@@ -1,9 +1,14 @@
-﻿const state = {
+const state = {
   projects: [],
+  projectSystems: [],
+  projectSystemsByProjectId: {},
   entries: [],
   entryTypes: [],
   selectedProjectId: null,
   selectedEntryId: null,
+  selectedSystemId: null,
+  selectedEntryIds: new Set(),
+  bulkEntryMode: false,
   selectedTypeId: 'All',
   autoLockMinutes: 15,
   revealCache: new Map(),
@@ -17,14 +22,27 @@
   users: [],
   projectMemberDraft: [],
   projectMemberProjectId: null,
-  view: 'vault'
+  view: 'vault',
+  uiTheme: 'dark',
+  uiThemeColors: {
+    accent: '#14b8a6',
+    accent2: '#f59e0b'
+  },
+  themePreferenceTimer: null,
+  sidebarCollapsed: false,
+  expandedProjectIds: new Set()
 };
+
+const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
+const THEME_MODES = new Set(['light', 'mix', 'dark']);
+const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
 
 const $ = selector => document.querySelector(selector);
 const loginView = $('#loginView');
 const appView = $('#appView');
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initializeTheme();
   bindEvents();
   await checkSession();
 });
@@ -34,8 +52,23 @@ function bindEvents() {
   $('#googleLoginBtn')?.addEventListener('click', loginWithGoogle);
   $('#lockBtn').addEventListener('click', logout);
   $('#usersNavBtn').addEventListener('click', showUsersPanel);
+  $('#sidebarToggleBtn')?.addEventListener('click', toggleSidebar);
+  $('#themeMenuBtn')?.addEventListener('click', toggleThemeMenu);
+  document.querySelectorAll('[data-theme-option]').forEach(button => {
+    button.addEventListener('click', () => {
+      setTheme(button.dataset.themeOption);
+      closeThemeMenu();
+    });
+  });
+  $('#mixAccentColor')?.addEventListener('input', event => updateMixThemeColor('accent', event.target.value));
+  $('#mixAccent2Color')?.addEventListener('input', event => updateMixThemeColor('accent2', event.target.value));
   $('#newProjectBtn').addEventListener('click', () => openProjectDialog());
+  $('#addSystemBtn')?.addEventListener('click', () => openProjectSystemDialog());
+  $('#projectSystemForm')?.addEventListener('submit', saveProjectSystem);
+  $('#manageSystemTypesBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#newEntryBtn').addEventListener('click', () => openEntryDialog());
+  $('#toggleEntryDeleteModeBtn')?.addEventListener('click', toggleEntryDeleteMode);
+  $('#deleteSelectedEntriesBtn')?.addEventListener('click', deleteSelectedEntries);
   $('#projectForm').addEventListener('submit', saveProject);
   $('#addProjectMemberBtn')?.addEventListener('click', addSelectedProjectMember);
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
@@ -48,7 +81,6 @@ function bindEvents() {
   $('#globalSearch').addEventListener('input', globalSearch);
   $('#exportJsonBtn').addEventListener('click', () => download('/api/export/json?passwords=1', 'apecglobal-backup.json'));
   $('#exportCsvBtn').addEventListener('click', () => download('/api/export/csv?passwords=1', 'apecglobal-export.csv'));
-  $('#addEntryTypeBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#saveJsonBtn').addEventListener('click', saveJsonBackup);
   $('#importFile').addEventListener('change', importFile);
@@ -57,6 +89,177 @@ function bindEvents() {
   });
   document.addEventListener('mousemove', resetAutoLock);
   document.addEventListener('keydown', resetAutoLock);
+  document.addEventListener('click', event => {
+    if (!event.target.closest('.theme-picker')) closeThemeMenu();
+  });
+  syncSidebarState();
+}
+
+function initializeTheme() {
+  const initialTheme = document.documentElement.dataset.theme || state.uiTheme;
+  syncMixThemeInputs();
+  setTheme(initialTheme, { silent: true });
+}
+
+function setTheme(theme, { silent = false } = {}) {
+  const nextTheme = THEME_MODES.has(theme) ? theme : 'dark';
+  state.uiTheme = nextTheme;
+  document.documentElement.dataset.theme = nextTheme;
+  document.querySelector('.theme-picker')?.classList.toggle('mix-active', nextTheme === 'mix');
+  $('#themeMenuLabel').textContent = themeDisplayName(nextTheme);
+  document.querySelectorAll('[data-theme-option]').forEach(button => {
+    const active = button.dataset.themeOption === nextTheme;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  applyMixThemeColors();
+  if (!silent) scheduleThemePreferenceSave();
+  if (!silent) toast(`Đã đổi chế độ ${themeLabel(nextTheme)}`);
+}
+
+function themeLabel(theme) {
+  return { light: 'sáng', mix: 'mix', dark: 'tối' }[theme] || 'tối';
+}
+
+function toggleThemeMenu(event) {
+  event.stopPropagation();
+  const menu = $('#themeMenu');
+  const button = $('#themeMenuBtn');
+  const willOpen = menu?.classList.contains('hidden');
+  menu?.classList.toggle('hidden', !willOpen);
+  button?.setAttribute('aria-expanded', String(Boolean(willOpen)));
+}
+
+function closeThemeMenu() {
+  $('#themeMenu')?.classList.add('hidden');
+  $('#themeMenuBtn')?.setAttribute('aria-expanded', 'false');
+}
+
+function themeDisplayName(theme) {
+  return { light: 'Sáng', mix: 'Mix', dark: 'Tối' }[theme] || 'Tối';
+}
+
+function updateMixThemeColor(key, color) {
+  if (!isHexColor(color)) return;
+  state.uiThemeColors[key] = color.toLowerCase();
+  syncMixThemeInputs();
+  if (state.uiTheme !== 'mix') {
+    setTheme('mix', { silent: true });
+    scheduleThemePreferenceSave();
+    return;
+  }
+  applyMixThemeColors();
+  scheduleThemePreferenceSave();
+}
+
+function applyUserThemePreferences(user = state.currentUser) {
+  const preferences = user?.preferences || {};
+  const mixTheme = preferences.mixTheme || {};
+  if (isHexColor(mixTheme.accent)) state.uiThemeColors.accent = mixTheme.accent.toLowerCase();
+  if (isHexColor(mixTheme.accent2)) state.uiThemeColors.accent2 = mixTheme.accent2.toLowerCase();
+  syncMixThemeInputs();
+  setTheme(THEME_MODES.has(preferences.theme) ? preferences.theme : state.uiTheme, { silent: true });
+}
+
+function currentThemePreferences() {
+  return {
+    theme: state.uiTheme,
+    mixTheme: {
+      accent: state.uiThemeColors.accent,
+      accent2: state.uiThemeColors.accent2
+    }
+  };
+}
+
+function scheduleThemePreferenceSave() {
+  if (!state.currentUser) return;
+  clearTimeout(state.themePreferenceTimer);
+  state.themePreferenceTimer = setTimeout(saveThemePreferences, 350);
+}
+
+async function saveThemePreferences() {
+  if (!state.currentUser) return;
+  const preferences = currentThemePreferences();
+  try {
+    const result = await api('/api/me/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(preferences)
+    });
+    state.currentUser = result.user || { ...state.currentUser, preferences };
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function syncMixThemeInputs() {
+  const accentInput = $('#mixAccentColor');
+  const accent2Input = $('#mixAccent2Color');
+  if (accentInput) accentInput.value = state.uiThemeColors.accent;
+  if (accent2Input) accent2Input.value = state.uiThemeColors.accent2;
+}
+
+function applyMixThemeColors() {
+  const rootStyle = document.documentElement.style;
+  if (state.uiTheme !== 'mix') {
+    MIX_THEME_VARIABLES.forEach(variable => rootStyle.removeProperty(variable));
+    return;
+  }
+  const accent = state.uiThemeColors.accent;
+  const accent2 = state.uiThemeColors.accent2;
+  rootStyle.setProperty('--accent', accent);
+  rootStyle.setProperty('--accent-light', lightenHex(accent, 34));
+  rootStyle.setProperty('--accent-dim', rgbaFromHex(accent, .14));
+  rootStyle.setProperty('--accent2', accent2);
+  rootStyle.setProperty('--body-glow-1', rgbaFromHex(accent, .12));
+  rootStyle.setProperty('--body-glow-2', rgbaFromHex(accent2, .08));
+}
+
+function isHexColor(value) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || ''));
+}
+
+function rgbaFromHex(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '';
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function lightenHex(hex, amount = 30) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    Math.min(255, rgb.r + amount),
+    Math.min(255, rgb.g + amount),
+    Math.min(255, rgb.b + amount)
+  );
+}
+
+function hexToRgb(hex) {
+  if (!isHexColor(hex)) return null;
+  const value = hex.slice(1);
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b].map(value => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function toggleSidebar() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  syncSidebarState();
+}
+
+function syncSidebarState() {
+  appView?.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+  const button = $('#sidebarToggleBtn');
+  if (!button) return;
+  button.setAttribute('aria-expanded', String(!state.sidebarCollapsed));
+  button.setAttribute('aria-label', state.sidebarCollapsed ? 'Mở sidebar' : 'Đóng sidebar');
+  button.title = state.sidebarCollapsed ? 'Mở sidebar' : 'Đóng sidebar';
 }
 
 async function api(path, options = {}) {
@@ -110,6 +313,7 @@ async function logout() {
 async function enterApp() {
   loginView.classList.add('hidden');
   appView.classList.remove('hidden');
+  applyUserThemePreferences();
   await loadEntryTypes();
   if (state.mode === 'local') {
     const settings = await api('/api/settings');
@@ -125,7 +329,6 @@ async function loadEntryTypes() {
   if (state.selectedTypeId !== 'All' && !state.entryTypes.some(type => String(type.id) === String(state.selectedTypeId))) {
     state.selectedTypeId = 'All';
   }
-  renderTypeFilters();
   fillEntryTypes();
 }
 
@@ -197,19 +400,24 @@ async function completeGoogleLogin() {
 async function loadProjects() {
   state.projects = await api('/api/projects');
   if (!state.selectedProjectId && state.projects[0]) state.selectedProjectId = state.projects[0].id;
+  if (state.selectedProjectId) state.expandedProjectIds.add(String(state.selectedProjectId));
   renderProjects();
   await loadEntries();
 }
 
 async function loadEntries() {
   if (!state.selectedProjectId) {
+    state.projectSystems = [];
     state.entries = [];
     state.selectedEntryId = null;
     renderHeader();
     renderEntries();
     return;
   }
+  await loadProjectSystems();
+  renderProjects();
   state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
+  pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
   if (!state.entries.some(entry => entry.id === state.selectedEntryId)) {
     state.selectedEntryId = state.entries[0]?.id || null;
   }
@@ -217,29 +425,66 @@ async function loadEntries() {
   renderEntries();
 }
 
+async function loadProjectSystems(projectId = state.selectedProjectId) {
+  if (!projectId) {
+    state.projectSystems = [];
+    state.selectedSystemId = null;
+    return;
+  }
+  const systems = await api(`/api/projects/${projectId}/systems`);
+  state.projectSystemsByProjectId[String(projectId)] = systems;
+  if (String(projectId) !== String(state.selectedProjectId)) return systems;
+  state.projectSystems = systems;
+  if (!systems.length) {
+    state.selectedSystemId = null;
+    return systems;
+  }
+  if (!state.selectedSystemId || !systems.some(system => String(system.id) === String(state.selectedSystemId))) {
+    state.selectedSystemId = systems[0].id;
+  }
+  return systems;
+}
+
 function renderProjects() {
   const query = $('#projectSearch').value.toLowerCase();
   $('#projectList').innerHTML = state.projects
     .filter(project => project.name.toLowerCase().includes(query))
-    .map(project => `
-      <div class="project-item ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''}" data-id="${project.id}">
-        <span class="vault-icon">${projectIcon(project.name)}</span>
-        <div>
-          <strong>${escapeHtml(project.name)}</strong>
-          <small>${escapeHtml(project.status)}</small>
-        </div>
-        <span class="project-actions">
-          ${can('users.manage') ? `<button class="icon-btn" type="button" title="Thành viên dự án" aria-label="Thành viên dự án" data-project-members="${project.id}">${svgIcon('users')}</button>` : ''}
-          ${isAdmin() ? `<button class="icon-btn" type="button" title="Sửa dự án" aria-label="Sửa dự án" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="icon-btn danger" type="button" title="Xóa dự án" aria-label="Xóa dự án" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
+    .map(project => {
+      const active = String(project.id) === String(state.selectedProjectId);
+      const expanded = state.expandedProjectIds.has(String(project.id));
+      return `
+      <div class="project-chip ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-id="${project.id}" data-drag-project="${project.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+        <button class="project-expand-btn ${expanded ? 'open' : ''}" type="button" title="${expanded ? 'Đóng hệ thống' : 'Mở hệ thống'}" data-toggle-project-systems="${project.id}">${svgIcon('chevron')}</button>
+        <span class="chip-avatar">${projectIcon(project.name)}</span>
+        <strong>${escapeHtml(project.name)}</strong>
+        <span class="chip-actions">
+          ${can('users.manage') ? `<button class="chip-btn" type="button" title="Thành viên" data-project-members="${project.id}">${svgIcon('users')}</button>` : ''}
+          ${isAdmin() ? `<button class="chip-btn" type="button" title="Sửa" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
         </span>
       </div>
-    `).join('');
-  document.querySelectorAll('.project-item').forEach(item => item.addEventListener('click', async () => {
+      ${expanded ? renderSystemSubmenu(project) : ''}
+    `;
+    }).join('');
+  document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async () => {
     state.view = 'vault';
+    if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
     state.selectedProjectId = item.dataset.id;
+    state.expandedProjectIds.add(String(item.dataset.id));
     state.revealCache.clear();
     renderProjects();
     await loadEntries();
+  }));
+  document.querySelectorAll('[data-toggle-project-systems]').forEach(button => button.addEventListener('click', async event => {
+    event.stopPropagation();
+    const projectId = String(button.dataset.toggleProjectSystems);
+    if (state.expandedProjectIds.has(projectId)) {
+      state.expandedProjectIds.delete(projectId);
+      renderProjects();
+      return;
+    }
+    state.expandedProjectIds.add(projectId);
+    if (!state.projectSystemsByProjectId[projectId]) await loadProjectSystems(projectId);
+    renderProjects();
   }));
   document.querySelectorAll('[data-edit-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
@@ -253,19 +498,219 @@ function renderProjects() {
     event.stopPropagation();
     deleteProject(button.dataset.deleteProject);
   }));
+  document.querySelectorAll('[data-system-filter]').forEach(button => button.addEventListener('click', async event => {
+    event.stopPropagation();
+    const projectId = button.dataset.systemProjectId;
+    if (projectId && String(state.selectedProjectId) !== String(projectId)) {
+      state.selectedProjectId = projectId;
+      state.expandedProjectIds.add(String(projectId));
+      state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || [];
+    }
+    state.selectedSystemId = button.dataset.systemFilter;
+    state.selectedEntryId = null;
+    state.revealCache.clear();
+    if (projectId && String(projectId) !== String(state.selectedProjectId)) return;
+    await loadEntries();
+  }));
+  document.querySelectorAll('[data-edit-system-sidebar]').forEach(button => button.addEventListener('click', async event => {
+    event.stopPropagation();
+    const [projectId, systemId] = String(button.dataset.editSystemSidebar || '').split(':');
+    await activateProjectForSystemAction(projectId);
+    const system = state.projectSystems.find(item => String(item.id) === String(systemId));
+    if (system) openProjectSystemDialog(system);
+  }));
+  document.querySelectorAll('[data-delete-system-sidebar]').forEach(button => button.addEventListener('click', async event => {
+    event.stopPropagation();
+    const [projectId, systemId] = String(button.dataset.deleteSystemSidebar || '').split(':');
+    await activateProjectForSystemAction(projectId);
+    await deleteProjectSystem(systemId);
+  }));
+  document.querySelectorAll('[data-open-system-dialog]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    if (button.dataset.openSystemDialog && String(state.selectedProjectId) !== String(button.dataset.openSystemDialog)) {
+      state.selectedProjectId = button.dataset.openSystemDialog;
+      state.selectedSystemId = null;
+      state.expandedProjectIds.add(String(state.selectedProjectId));
+      loadEntries().then(() => openProjectSystemDialog());
+      return;
+    }
+    openProjectSystemDialog();
+  }));
+  bindProjectDragActions();
+  bindSystemDragActions();
+  syncBulkActionButtons();
+}
+
+async function activateProjectForSystemAction(projectId) {
+  if (!projectId) return;
+  if (String(state.selectedProjectId) !== String(projectId)) {
+    state.selectedProjectId = projectId;
+    state.selectedSystemId = null;
+    state.selectedEntryId = null;
+    state.expandedProjectIds.add(String(projectId));
+  }
+  state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || await loadProjectSystems(projectId);
+}
+
+function renderSystemSubmenu(project = currentProject()) {
+  const projectId = String(project?.id || state.selectedProjectId || '');
+  const systems = state.projectSystemsByProjectId[projectId] || (String(projectId) === String(state.selectedProjectId) ? state.projectSystems : []);
+  const systemsHtml = systems.map(system => `
+    <div class="system-chip ${String(projectId) === String(state.selectedProjectId) && String(system.id) === String(state.selectedSystemId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" role="button" tabindex="0" data-system-project-id="${projectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+      <span class="system-chip-main"><span>${escapeHtml(system.name)}</span><small>${escapeHtml(system.type || 'Web')}</small></span>
+      ${can('users.manage') ? `<span class="system-chip-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system-sidebar="${projectId}:${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system-sidebar="${projectId}:${system.id}">${svgIcon('trash')}</button></span>` : ''}
+    </div>
+  `).join('');
+  const addButton = can('users.manage')
+    ? `<button class="system-chip add-system-inline" type="button" data-open-system-dialog="${projectId}">＋ Thêm hệ thống</button>`
+    : '';
+  return `
+    <div class="system-submenu">
+      ${systemsHtml || '<div class="system-empty">Chưa có hệ thống</div>'}
+      ${addButton}
+    </div>
+  `;
+}
+
+function toggleSetValue(set, value, checked) {
+  const normalized = String(value || '');
+  if (!normalized) return;
+  if (checked) set.add(normalized);
+  else set.delete(normalized);
+}
+
+function pruneSet(set, allowedValues) {
+  for (const value of [...set]) {
+    if (!allowedValues.has(String(value))) set.delete(value);
+  }
+}
+
+function syncBulkActionButtons() {
+  const entryToggle = $('#toggleEntryDeleteModeBtn');
+  entryToggle?.classList.toggle('hidden', !visibleEntries().some(entry => entry.permissions?.canDelete));
+  if (entryToggle) entryToggle.textContent = state.bulkEntryMode ? 'Hủy chọn account' : 'Chọn xóa account';
+  $('#deleteSelectedEntriesBtn')?.classList.toggle('hidden', !state.bulkEntryMode || state.selectedEntryIds.size === 0);
+}
+
+function toggleEntryDeleteMode() {
+  state.bulkEntryMode = !state.bulkEntryMode;
+  if (!state.bulkEntryMode) state.selectedEntryIds.clear();
+  renderEntries();
+}
+
+function bindProjectDragActions() {
+  if (!isAdmin()) return;
+  document.querySelectorAll('[data-drag-project]').forEach(row => {
+    row.addEventListener('dragstart', event => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/project-id', row.dataset.dragProject);
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', event => {
+      event.preventDefault();
+      row.classList.add('drop-target');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+    row.addEventListener('drop', async event => {
+      event.preventDefault();
+      row.classList.remove('drop-target');
+      const draggedId = event.dataTransfer.getData('text/project-id');
+      const targetId = row.dataset.dragProject;
+      if (!draggedId || draggedId === targetId) return;
+      state.projects = moveItemBefore(state.projects, draggedId, targetId);
+      renderProjects();
+      await persistProjectOrder();
+    });
+  });
+}
+
+function bindSystemDragActions() {
+  if (!isAdmin()) return;
+  document.querySelectorAll('[data-drag-system]').forEach(row => {
+    row.addEventListener('dragstart', event => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/system-id', row.dataset.dragSystem);
+      event.dataTransfer.setData('text/project-id', row.dataset.systemProjectId);
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', event => {
+      event.preventDefault();
+      row.classList.add('drop-target');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+    row.addEventListener('drop', async event => {
+      event.preventDefault();
+      row.classList.remove('drop-target');
+      const projectId = row.dataset.systemProjectId;
+      const draggedProjectId = event.dataTransfer.getData('text/project-id');
+      const draggedId = event.dataTransfer.getData('text/system-id');
+      const targetId = row.dataset.dragSystem;
+      if (!draggedId || draggedId === targetId || String(projectId) !== String(draggedProjectId)) return;
+      const systems = state.projectSystemsByProjectId[String(projectId)] || [];
+      const reordered = moveItemBefore(systems, draggedId, targetId);
+      state.projectSystemsByProjectId[String(projectId)] = reordered;
+      if (String(projectId) === String(state.selectedProjectId)) state.projectSystems = reordered;
+      renderProjects();
+      await persistSystemOrder(projectId);
+    });
+  });
+}
+
+function moveItemBefore(items, draggedId, targetId) {
+  const next = [...items];
+  const fromIndex = next.findIndex(item => String(item.id) === String(draggedId));
+  const toIndex = next.findIndex(item => String(item.id) === String(targetId));
+  if (fromIndex < 0 || toIndex < 0) return next;
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next.map((row, index) => ({ ...row, sortOrder: index + 1 }));
+}
+
+async function persistProjectOrder() {
+  if (!isAdmin()) return;
+  try {
+    await api('/api/projects/reorder', {
+      method: 'PATCH',
+      body: JSON.stringify({ ids: state.projects.map(project => project.id) })
+    });
+  } catch (error) {
+    toast(error.message);
+    await loadProjects();
+  }
+}
+
+async function persistSystemOrder(projectId) {
+  if (!isAdmin()) return;
+  const systems = state.projectSystemsByProjectId[String(projectId)] || [];
+  try {
+    await api(`/api/projects/${projectId}/systems/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ids: systems.map(system => system.id) })
+    });
+  } catch (error) {
+    toast(error.message);
+    await loadProjectSystems(projectId);
+    renderProjects();
+  }
 }
 
 function renderHeader() {
   const project = currentProject();
-  $('#newEntryBtn').disabled = !project || !canCreateEntry();
+  const system = currentSystem();
+  const missingSystems = Boolean(project && !state.projectSystems.length);
+  $('#newEntryBtn').disabled = !project || missingSystems || !canCreateEntry();
+  $('#newEntryBtn').title = missingSystems
+    ? 'Tạo hệ thống trước khi thêm account'
+    : '';
+  $('#addSystemBtn')?.classList.toggle('hidden', !project || !can('users.manage'));
   const title = $('#currentProjectName');
   const meta = $('#currentProjectMeta');
   if (title) title.textContent = project?.name || 'Tất cả dự án';
   if (meta) {
-    const typeName = state.selectedTypeId === 'All'
-      ? 'Tất cả loại account'
-      : state.entryTypes.find(type => String(type.id) === String(state.selectedTypeId))?.name || 'Đang lọc';
-    meta.textContent = `${state.entries.length} mục - ${typeName}`;
+    const systemName = system ? system.name : 'He thong';
+    meta.textContent = `${visibleEntries().length} muc - ${systemName}`;
   }
   const search = $('#globalSearch');
   if (search) search.placeholder = project ? `Tìm trong ${project.name}...` : 'Tìm account, URL, username...';
@@ -276,8 +721,29 @@ function currentProject() {
   return state.projects.find(item => String(item.id) === String(state.selectedProjectId)) || null;
 }
 
+function currentSystem() {
+  return state.projectSystems.find(item => String(item.id) === String(state.selectedSystemId)) || null;
+}
+
 function projectTypePermissions(project = currentProject()) {
   return project?.entryTypePermissions || [];
+}
+
+function permissionForProjectSystem(systemId, project = currentProject()) {
+  if (state.currentUser?.role === 'Admin') {
+    return {
+      canViewEntry: true,
+      canViewUrl: true,
+      canViewUsername: true,
+      canRevealPassword: true,
+      canViewNotes: true,
+      canCreate: true,
+      canEdit: true,
+      canDelete: true
+    };
+  }
+  if (!systemId) return null;
+  return projectTypePermissions(project).find(permission => String(permission.systemId) === String(systemId)) || null;
 }
 
 function permissionForProjectType(typeId, project = currentProject()) {
@@ -296,17 +762,18 @@ function permissionForProjectType(typeId, project = currentProject()) {
   return projectTypePermissions(project).find(permission => String(permission.entryTypeId) === String(typeId)) || null;
 }
 
-function canCreateEntry(typeId = null) {
+function canCreateEntry() {
   const project = currentProject();
   if (!project) return false;
+  if (!state.projectSystems.length) return false;
+  if (!state.selectedSystemId) return false;
   if (state.currentUser?.role === 'Admin') return true;
-  const selectedTypeId = typeId || (state.selectedTypeId === 'All' ? null : state.selectedTypeId);
-  if (selectedTypeId) return Boolean(permissionForProjectType(selectedTypeId, project)?.canCreate);
-  return projectTypePermissions(project).some(permission => permission.canCreate);
+  return Boolean(permissionForProjectSystem(state.selectedSystemId, project)?.canCreate);
 }
 
 function entryTypeOptionsForEntry(entry = {}) {
   if (state.currentUser?.role === 'Admin') return state.entryTypes;
+  if (state.projectSystems.length) return state.entryTypes;
   if (entry.id) {
     return state.entryTypes.filter(type => (
       String(type.id) === String(entryTypeIdForEntry(entry))
@@ -314,6 +781,17 @@ function entryTypeOptionsForEntry(entry = {}) {
     ));
   }
   return state.entryTypes.filter(type => permissionForProjectType(type.id)?.canCreate);
+}
+
+function systemOptionsForEntry(entry = {}) {
+  if (state.currentUser?.role === 'Admin') return state.projectSystems;
+  if (entry.id) {
+    return state.projectSystems.filter(system => (
+      String(system.id) === String(entry.systemId || entry.projectSystemId)
+        || permissionForProjectSystem(system.id)?.canEdit
+    ));
+  }
+  return state.projectSystems.filter(system => permissionForProjectSystem(system.id)?.canCreate);
 }
 
 function entryTypeIdForEntry(entry = {}) {
@@ -324,8 +802,14 @@ function entryTypeIdForEntry(entry = {}) {
 
 function firstCreatableEntryTypeId() {
   if (state.currentUser?.role === 'Admin') return state.entryTypes[0]?.id || '';
+  if (state.projectSystems.length) return state.entryTypes[0]?.id || '';
   const permission = projectTypePermissions().find(item => item.canCreate);
   return permission?.entryTypeId || '';
+}
+
+function firstCreatableSystemId() {
+  if (state.selectedSystemId && state.projectSystems.some(system => String(system.id) === String(state.selectedSystemId))) return state.selectedSystemId;
+  return '';
 }
 
 function renderStats() {
@@ -334,8 +818,10 @@ function renderStats() {
 }
 
 function renderTypeFilters() {
+  const container = $('#typeFilters');
+  if (!container) return;
   const filters = [{ id: 'All', name: 'All' }, ...state.entryTypes];
-  $('#typeFilters').innerHTML = filters.map(type => `<button class="filter ${String(type.id) === String(state.selectedTypeId) ? 'active' : ''}" data-type-id="${type.id}">${escapeHtml(type.name)}</button>`).join('');
+  container.innerHTML = filters.map(type => `<button class="filter ${String(type.id) === String(state.selectedTypeId) ? 'active' : ''}" data-type-id="${type.id}">${escapeHtml(type.name)}</button>`).join('');
   document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => {
     state.selectedTypeId = button.dataset.typeId;
     renderTypeFilters();
@@ -348,32 +834,91 @@ function fillEntryTypes(types = state.entryTypes) {
   $('#entryTypeSelect').innerHTML = types.map(type => `<option value="${type.id}">${escapeHtml(type.name)}</option>`).join('');
 }
 
+function fillEntrySystems(systems = state.projectSystems) {
+  const select = $('#entrySystemSelect');
+  if (!select) return;
+  if (select.tagName !== 'SELECT') return;
+  select.innerHTML = systems.map(system => `<option value="${system.id}">${escapeHtml(system.name)} (${escapeHtml(system.type || 'Web')})</option>`).join('');
+}
+
+function syncEntryTypeWithSystem({ force = false } = {}) {
+  const systemSelect = $('#entrySystemSelect');
+  const typeSelect = $('#entryTypeSelect');
+  if (!systemSelect || !typeSelect) return;
+  const system = state.projectSystems.find(item => String(item.id) === String(systemSelect.value));
+  if (!system?.type) return;
+  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system.type).toLowerCase());
+  if (!matchingType) return;
+  const hasMatchingOption = Array.from(typeSelect.options).some(option => String(option.value) === String(matchingType.id));
+  if (!hasMatchingOption) return;
+  if (force || !typeSelect.value) typeSelect.value = matchingType.id;
+}
+
+function systemForEntry(entry = {}) {
+  const systemId = entry.systemId || entry.projectSystemId;
+  return state.projectSystems.find(system => String(system.id) === String(systemId)) || null;
+}
+
+function entryTypeIdForSystem(systemId) {
+  const system = state.projectSystems.find(item => String(item.id) === String(systemId));
+  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system?.type || '').toLowerCase());
+  return matchingType?.id || state.entryTypes[0]?.id || '';
+}
+
 function entryMatchesSelectedType(entry) {
-  if (state.selectedTypeId === 'All') return true;
-  if (String(entry.typeId || '') === String(state.selectedTypeId)) return true;
-  const selectedType = state.entryTypes.find(type => String(type.id) === String(state.selectedTypeId));
-  return Boolean(selectedType?.name && String(entry.type || '').toLowerCase() === String(selectedType.name).toLowerCase());
+  return true;
+}
+
+function entryMatchesSelectedSystem(entry) {
+  if (!state.selectedSystemId) return false;
+  return String(entry.systemId || entry.projectSystemId || '') === String(state.selectedSystemId);
+}
+
+function visibleEntries(rows = state.entries) {
+  return rows.filter(entryMatchesSelectedSystem);
 }
 
 function renderEntries(rows = state.entries) {
-  const filtered = rows.filter(entryMatchesSelectedType);
+  const filtered = visibleEntries(rows);
   const emptyState = $('#emptyState');
-  emptyState.textContent = emptyEntryMessage(filtered, rows);
+  emptyState.innerHTML = emptyEntryHtml(filtered, rows);
   emptyState.classList.toggle('hidden', filtered.length > 0);
-  $('#entryList').innerHTML = filtered.map(entry => `
-    <button class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" data-select="${entry.id}">
-      <span class="entry-icon">${svgIcon(iconNameForType(entry.type))}<span>${iconForType(entry.type)}</span></span>
-      <span class="entry-text">
-        <strong>${escapeHtml(entry.name)}</strong>
-        <small>${escapeHtml(entryListSubtitle(entry))}</small>
-      </span>
-    </button>
-  `).join('');
+  $('#entryList').innerHTML = filtered.map(entry => {
+    const sub = entryListSubtitle(entry);
+    const system = systemForEntry(entry);
+    const badge = system ? `${system.name} · ${system.type || 'System'}` : (entry.type || 'Account');
+    return `
+    <article class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" role="button" tabindex="0" data-select="${entry.id}">
+      ${entry.permissions?.canDelete && state.bulkEntryMode ? `<input class="bulk-check entry-check" type="checkbox" data-select-entry="${entry.id}" ${state.selectedEntryIds.has(String(entry.id)) ? 'checked' : ''} aria-label="Chọn account ${escapeAttr(entry.name)}">` : ''}
+      <div class="card-head">
+        <span class="entry-icon">${svgIcon(iconNameForType(system?.type || entry.type))}</span>
+        <span class="type-badge">${escapeHtml(badge)}</span>
+      </div>
+      <strong class="card-name">${escapeHtml(entry.name)}</strong>
+      <small class="card-sub">${escapeHtml(sub)}</small>
+    </article>
+  `}).join('');
   if (!filtered.some(entry => String(entry.id) === String(state.selectedEntryId))) {
     state.selectedEntryId = filtered[0]?.id || null;
   }
   renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
   bindRowActions();
+  $('#createFirstSystemBtn')?.addEventListener('click', () => openProjectSystemDialog());
+}
+
+function emptyEntryHtml(filtered, rows) {
+  if (!currentProject()) return '<strong>Chọn dự án</strong><p>Chọn một công ty/dự án bên trái để xem hệ thống và account.</p>';
+  if (!state.projectSystems.length) {
+    const action = can('users.manage')
+      ? '<button id="createFirstSystemBtn" class="btn-accent" type="button">＋ Tạo hệ thống đầu tiên</button>'
+      : '<p>Admin cần tạo hệ thống trước khi thêm account.</p>';
+    return `<strong>Chưa có hệ thống trong dự án</strong><p>Tạo Website, CMS, App hoặc API trước, sau đó mới thêm account vào đúng hệ thống.</p>${action}`;
+  }
+  if (!filtered.length && rows.length > 0) return '<strong>Không có account phù hợp</strong><p>Thử chọn hệ thống khác trong sidebar.</p>';
+  if (state.currentUser?.role !== 'Admin' && !projectTypePermissions().some(permission => permission.canViewEntry)) {
+    return '<strong>Chưa có quyền xem account</strong><p>Admin cần cấp quyền theo hệ thống cho bạn.</p>';
+  }
+  return '<strong>Chưa có account trong dự án</strong><p>Thêm account đầu tiên vào một hệ thống bên trên.</p>';
 }
 
 function emptyEntryMessage(filtered, rows) {
@@ -406,19 +951,32 @@ function bindRowActions() {
   document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
   document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)))));
   document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', () => deleteEntry(button.dataset.delete)));
+  document.querySelectorAll('[data-select-entry]').forEach(input => input.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleSetValue(state.selectedEntryIds, input.dataset.selectEntry, input.checked);
+    syncBulkActionButtons();
+  }));
+  document.querySelectorAll('.close-detail').forEach(button => button.addEventListener('click', () => {
+    const aside = $('#detailAside');
+    if (aside) aside.classList.remove('open');
+  }));
+  syncBulkActionButtons();
 }
 
 function renderDetail(entry) {
-  if (state.view === 'users') return renderUsersPanel();
+  const aside = $('#detailAside');
+  if (state.view === 'users') { if (aside) aside.classList.add('open'); return renderUsersPanel(); }
   if (!entry) {
     $('#detailPanel').className = 'detail-empty';
     $('#detailPanel').innerHTML = `
-      <div class="empty-lock">${svgIcon('shield')}</div>
-      <h2>Chọn một account</h2>
-      <p>Account, mật khẩu và đường link sẽ hiển thị ở đây.</p>
+      <div class="empty-lock">🛡️</div>
+      <h3>Chọn một account</h3>
+      <p>Chi tiết sẽ hiển thị ở đây</p>
     `;
+    if (aside) aside.classList.remove('open');
     return;
   }
+  if (aside) aside.classList.add('open');
 
   const password = state.revealCache.get(entry.id) || '************';
   const canEditEntry = Boolean(entry.permissions?.canEdit);
@@ -437,6 +995,7 @@ function renderDetail(entry) {
       <div class="detail-actions">
         ${canEditEntry ? `<button data-edit="${entry.id}">${svgIcon('edit')} Sửa</button>` : ''}
         ${canDeleteEntry ? `<button data-delete="${entry.id}">${svgIcon('trash')} Xóa</button>` : ''}
+        <button class="close-detail" title="Đóng">✕</button>
       </div>
     </header>
 
@@ -540,6 +1099,135 @@ async function saveProject(event) {
   await loadProjects();
 }
 
+async function openProjectSystemDialog(system = {}) {
+  const project = currentProject();
+  if (!project || !can('users.manage')) return toast('Bạn không có quyền quản lý hệ thống');
+  const form = $('#projectSystemForm');
+  form.id.value = system.id || '';
+  form.projectId.value = project.id;
+  form.name.value = system.name || '';
+  renderProjectSystemTypeOptions(system.type || 'Web', { includeSelected: Boolean(system.id) });
+  form.description.value = system.description || '';
+  form.status.value = system.status || 'Active';
+  renderProjectSystemManager();
+  $('#projectSystemDialog').showModal();
+  focusDialogField('#projectSystemDialog', 'input[name="name"]');
+}
+
+async function saveProjectSystem(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target));
+  const id = data.id;
+  const projectId = data.projectId || state.selectedProjectId;
+  delete data.id;
+  delete data.projectId;
+  let savedSystem;
+  try {
+    savedSystem = await api(id ? `/api/projects/${projectId}/systems/${id}` : `/api/projects/${projectId}/systems`, {
+      method: id ? 'PATCH' : 'POST',
+      body: JSON.stringify(data)
+    });
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
+  toast('Đã lưu hệ thống');
+  if (savedSystem?.id) state.selectedSystemId = savedSystem.id;
+  await loadProjectSystems(projectId);
+  renderProjects();
+  resetProjectSystemForm(projectId);
+  renderProjectSystemManager();
+  await loadEntries();
+}
+
+function resetProjectSystemForm(projectId = state.selectedProjectId) {
+  const form = $('#projectSystemForm');
+  if (!form) return;
+  form.id.value = '';
+  form.projectId.value = projectId || '';
+  form.name.value = '';
+  renderProjectSystemTypeOptions('Web');
+  form.description.value = '';
+  form.status.value = 'Active';
+  $('#saveProjectSystemBtn').textContent = 'Lưu hệ thống';
+}
+
+function projectSystemTypeOptions(selectedType = '', { includeSelected = false } = {}) {
+  const byName = new Map();
+  const configuredTypes = new Map(state.entryTypes
+    .map(type => [String(type.name || '').trim().toLowerCase(), type])
+    .filter(([name]) => Boolean(name)));
+  const activeTypes = state.entryTypes.filter(type => type.isActive !== false).map(type => type.name);
+  const defaultTypes = DEFAULT_SYSTEM_TYPES.filter(type => {
+    const configured = configuredTypes.get(String(type).toLowerCase());
+    return !configured || configured.isActive !== false;
+  });
+  [...defaultTypes, ...activeTypes]
+    .map(type => String(type || '').trim())
+    .filter(Boolean)
+    .forEach(type => {
+      const key = type.toLowerCase();
+      if (!byName.has(key)) byName.set(key, type);
+    });
+  const selected = String(selectedType || '').trim();
+  if (includeSelected && selected && !byName.has(selected.toLowerCase())) byName.set(selected.toLowerCase(), selected);
+  return [...byName.values()];
+}
+
+function renderProjectSystemTypeOptions(selectedType = 'Web', options = {}) {
+  const select = $('#projectSystemTypeSelect');
+  if (!select) return;
+  const selected = String(selectedType || 'Web').trim();
+  const types = projectSystemTypeOptions(selected, options);
+  select.innerHTML = types.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('');
+  select.value = types.find(type => type.toLowerCase() === selected.toLowerCase()) || types[0] || '';
+}
+
+function renderProjectSystemManager() {
+  const list = $('#projectSystemList');
+  if (!list) return;
+  list.innerHTML = state.projectSystems.map(system => `
+    <article class="type-manager-card">
+      <div>
+        <strong>${escapeHtml(system.name)}</strong>
+        <small>${escapeHtml(system.type || 'Web')} - ${escapeHtml(system.description || 'Chưa có mô tả')}</small>
+      </div>
+      <span class="role-chip">${escapeHtml(system.status || 'Active')}</span>
+      <div class="user-actions">
+        <button type="button" data-edit-system="${system.id}">Sửa</button>
+        <button type="button" class="danger" data-delete-system="${system.id}">Xóa</button>
+      </div>
+    </article>
+  `).join('') || '<p class="form-hint">Chưa có hệ thống. Tạo Website, CMS, App hoặc API đầu tiên cho công ty này.</p>';
+  document.querySelectorAll('[data-edit-system]').forEach(button => {
+    button.addEventListener('click', () => {
+      const system = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystem));
+      if (system) openProjectSystemDialog(system);
+    });
+  });
+  document.querySelectorAll('[data-delete-system]').forEach(button => {
+    button.addEventListener('click', () => deleteProjectSystem(button.dataset.deleteSystem));
+  });
+}
+
+async function deleteProjectSystem(id) {
+  const projectId = state.selectedProjectId;
+  const system = state.projectSystems.find(item => String(item.id) === String(id));
+  if (!projectId || !system) return;
+  if (!confirm(`Xóa hệ thống "${system.name}"?`)) return;
+  try {
+    await api(`/api/projects/${projectId}/systems/${id}`, { method: 'DELETE' });
+    if (String(state.selectedSystemId) === String(id)) state.selectedSystemId = null;
+    await loadProjectSystems(projectId);
+    renderProjects();
+    renderProjectSystemManager();
+    await loadEntries();
+    toast('Đã xóa hệ thống');
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 async function openProjectMembersDialog(project) {
   if (!project || !can('users.manage')) return toast('Bạn không có quyền quản lý thành viên dự án');
   const form = $('#projectMembersForm');
@@ -559,6 +1247,7 @@ async function renderProjectMemberMatrix(projectId) {
   if (!projectId) return;
 
   await loadUsersForPermissions();
+  await loadProjectSystems(projectId);
   state.projectMemberDraft = await loadProjectMembers(projectId);
   renderProjectMemberOptions();
   renderProjectMemberList();
@@ -641,8 +1330,8 @@ function addSelectedProjectMember() {
 }
 
 function defaultProjectMemberPermissions() {
-  return state.entryTypes.map(type => ({
-    entryTypeId: type.id,
+  return state.projectSystems.map(system => ({
+    systemId: system.id,
     canViewEntry: true,
     canViewUrl: false,
     canViewUsername: false,
@@ -677,6 +1366,8 @@ async function deleteProject(id) {
 
 async function openEntryDialog(entry = {}) {
   const editing = Boolean(entry.id);
+  if (!editing && !state.projectSystems.length) return toast('Tạo hệ thống trước khi thêm account');
+  if (!editing && !state.selectedSystemId) return toast('Chọn một hệ thống cụ thể trước khi thêm account');
   if (editing && !entry.permissions?.canEdit) return toast('Bạn không có quyền sửa account này');
   if (!editing && !canCreateEntry()) return toast('Bạn không có quyền tạo account trong dự án này');
   let formEntry = entry;
@@ -689,12 +1380,17 @@ async function openEntryDialog(entry = {}) {
     }
   }
   const typeOptions = entryTypeOptionsForEntry(formEntry);
+  const systemOptions = systemOptionsForEntry(formEntry);
+  if (state.projectSystems.length && !systemOptions.length) return toast('Bạn không có quyền với hệ thống nào trong dự án này');
   if (!typeOptions.length) return toast('Bạn không có quyền với loại account nào trong dự án này');
   const form = $('#entryForm');
+  fillEntrySystems(systemOptions);
   fillEntryTypes(typeOptions);
   form.id.value = formEntry.id || '';
   form.name.value = formEntry.name || '';
+  form.systemId.value = formEntry.id ? (formEntry.systemId || formEntry.projectSystemId || '') : firstCreatableSystemId();
   form.typeId.value = formEntry.id ? entryTypeIdForEntry(formEntry) : firstCreatableEntryTypeId();
+  if (!editing) syncEntryTypeWithSystem({ force: true });
   form.environment.value = formEntry.environment || 'Production';
   form.url.value = formEntry.url || '';
   form.username.value = formEntry.username || '';
@@ -713,6 +1409,7 @@ async function saveEntry(event) {
   const id = data.id;
   delete data.id;
   data.projectId = state.selectedProjectId;
+  data.typeId = data.typeId || entryTypeIdForSystem(data.systemId);
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
   if (!data.password && id) delete data.password;
   try {
@@ -756,6 +1453,29 @@ async function deleteEntry(id) {
   await api(`/api/entries/${id}`, { method: 'DELETE' });
   toast('Đã xóa');
   await loadEntries();
+}
+
+async function deleteSelectedEntries() {
+  const ids = [...state.selectedEntryIds];
+  if (!ids.length) return;
+  const deletableIds = ids.filter(id => state.entries.find(entry => String(entry.id) === String(id))?.permissions?.canDelete);
+  if (!deletableIds.length) return toast('Bạn không có quyền xóa các account đã chọn');
+  if (!confirm(`Xóa ${deletableIds.length} account đã chọn?`)) return;
+  let deleted = 0;
+  const errors = [];
+  for (const id of deletableIds) {
+    try {
+      await api(`/api/entries/${id}`, { method: 'DELETE' });
+      deleted += 1;
+      if (String(state.selectedEntryId) === String(id)) state.selectedEntryId = null;
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  state.selectedEntryIds.clear();
+  state.bulkEntryMode = false;
+  await loadEntries();
+  toast(errors.length ? `Đã xóa ${deleted}/${deletableIds.length} account. ${errors[0]}` : `Đã xóa ${deleted} account`);
 }
 
 async function globalSearch() {
@@ -834,14 +1554,18 @@ function renderEntryTypeManager() {
       <div class="user-actions">
         <button type="button" data-edit-entry-type="${type.id}">Sửa</button>
         <button type="button" data-toggle-entry-type="${type.id}">${type.isActive ? 'Tắt' : 'Bật'}</button>
+        <button type="button" class="danger" data-delete-entry-type="${type.id}">Xóa</button>
       </div>
     </article>
-  `).join('') || '<p class="form-hint">Chưa có loại account.</p>';
+  `).join('') || '<p class="form-hint">Chưa có loại hệ thống.</p>';
   document.querySelectorAll('[data-edit-entry-type]').forEach(button => {
     button.addEventListener('click', () => editEntryType(button.dataset.editEntryType));
   });
   document.querySelectorAll('[data-toggle-entry-type]').forEach(button => {
     button.addEventListener('click', () => toggleEntryType(button.dataset.toggleEntryType));
+  });
+  document.querySelectorAll('[data-delete-entry-type]').forEach(button => {
+    button.addEventListener('click', () => deleteEntryType(button.dataset.deleteEntryType));
   });
 }
 
@@ -868,7 +1592,24 @@ async function toggleEntryType(id) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
-    toast(type.isActive ? 'Đã tắt loại account' : 'Đã bật loại account');
+    refreshProjectSystemTypeSelect(type.name);
+    toast(type.isActive ? 'Đã tắt loại hệ thống' : 'Đã bật loại hệ thống');
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function deleteEntryType(id) {
+  const type = state.entryTypes.find(item => String(item.id) === String(id));
+  if (!type) return;
+  if (!confirm(`Xóa loại hệ thống "${type.name}"?`)) return;
+  try {
+    await api(`/api/entry-types/${id}`, { method: 'DELETE' });
+    await loadEntryTypes();
+    renderEntryTypeManager();
+    refreshProjectSystemTypeSelect();
+    resetEntryTypeForm();
+    toast('Đã xóa loại hệ thống');
   } catch (error) {
     toast(error.message);
   }
@@ -884,7 +1625,7 @@ async function saveEntryType(event) {
     sortOrder: form.sortOrder.value ? Number(form.sortOrder.value) : undefined,
     isActive: form.isActive.checked
   };
-  if (!payload.name) return toast('Tên loại account là bắt buộc');
+  if (!payload.name) return toast('Tên loại hệ thống là bắt buộc');
   try {
     await api(id ? `/api/entry-types/${id}` : '/api/entry-types', {
       method: id ? 'PATCH' : 'POST',
@@ -892,11 +1633,18 @@ async function saveEntryType(event) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
+    refreshProjectSystemTypeSelect(payload.name);
     resetEntryTypeForm();
-    toast(id ? 'Đã cập nhật loại account' : 'Đã thêm loại account');
+    toast(id ? 'Đã cập nhật loại hệ thống' : 'Đã thêm loại hệ thống');
   } catch (error) {
     toast(error.message);
   }
+}
+
+function refreshProjectSystemTypeSelect(preferredType = '') {
+  const select = $('#projectSystemTypeSelect');
+  if (!select) return;
+  renderProjectSystemTypeOptions(preferredType || select.value || 'Web');
 }
 
 let autoLockTimer;
@@ -922,13 +1670,13 @@ function isAdmin() {
 }
 
 function applyPermissionUi() {
-  $('#usersNavBtn').classList.toggle('hidden', !can('users.manage'));
-  $('#newProjectBtn').disabled = !isAdmin();
-  $('#importBtn').disabled = !isAdmin();
-  $('#addEntryTypeBtn').classList.toggle('hidden', !can('users.manage'));
-  $('#saveJsonBtn').disabled = !isAdmin();
-  $('#exportJsonBtn').disabled = !isAdmin();
-  $('#exportCsvBtn').disabled = !isAdmin();
+  $('#usersNavBtn')?.classList.toggle('hidden', !can('users.manage'));
+  const npb = $('#newProjectBtn'); if (npb) npb.disabled = !isAdmin();
+  const ib = $('#importBtn'); if (ib) ib.disabled = !isAdmin();
+  $('#addSystemBtn')?.classList.toggle('hidden', !can('users.manage') || !currentProject());
+  const sjb = $('#saveJsonBtn'); if (sjb) sjb.disabled = !isAdmin();
+  const ejb = $('#exportJsonBtn'); if (ejb) ejb.disabled = !isAdmin();
+  const ecb = $('#exportCsvBtn'); if (ecb) ecb.disabled = !isAdmin();
   renderCurrentUser();
 }
 
@@ -956,15 +1704,18 @@ async function showUsersPanel() {
 }
 
 function renderUsersPanel() {
+  const aside = $('#detailAside');
+  if (aside) aside.classList.add('open');
   $('#detailPanel').className = 'detail-content users-panel';
   $('#detailPanel').innerHTML = `
     <header class="detail-head">
       <div>
         <h1>Người dùng & phân quyền</h1>
-        <p><span class="tag-dot"></span> Tài khoản nội bộ được tạo sau khi admin đăng nhập</p>
+        <p><span class="tag-dot"></span> Tài khoản nội bộ</p>
       </div>
       <div class="detail-actions">
-        <button id="addUserBtn">+ Thêm user</button>
+        <button id="addUserBtn" class="btn-accent">+ Thêm user</button>
+        <button class="close-detail" title="Đóng">✕</button>
       </div>
     </header>
     <section class="users-grid">
@@ -1067,15 +1818,21 @@ function openMemberPermissionDialog(userId) {
   form.userId.value = member.userId;
   if (title) title.textContent = `Quyền trong dự án - ${member.displayName || member.username}`;
   const existing = new Map((member.detailedPermissions || []).map(permission => [
-    String(permission.entryTypeId),
+    String(permission.systemId || permission.entryTypeId),
     permission
   ]));
   const columns = permissionColumns();
-  matrix.innerHTML = state.entryTypes.map(type => {
-    const permission = existing.get(String(type.id)) || {};
+  const permissionRows = state.projectSystems.map(system => ({ id: system.id, name: system.name, type: system.type, systemId: system.id }));
+  if (!permissionRows.length) {
+    matrix.innerHTML = '<p class="form-hint">Tạo hệ thống trước, sau đó cấp quyền cho thành viên theo từng hệ thống.</p>';
+    $('#memberPermissionDialog').showModal();
+    return;
+  }
+  matrix.innerHTML = permissionRows.map(item => {
+    const permission = existing.get(String(item.id)) || {};
     return `
-      <div class="permission-type-row" data-entry-type-id="${type.id}">
-        <span>${escapeHtml(type.name)}</span>
+      <div class="permission-type-row" ${item.systemId ? `data-system-id="${item.systemId}"` : `data-entry-type-id="${item.entryTypeId}"`}>
+        <span>${escapeHtml(item.name)}<small>${escapeHtml(item.type || '')}</small></span>
         ${columns.map(([key, label]) => `
           <label><input type="checkbox" data-permission-key="${key}" ${permission[key] ? 'checked' : ''}> ${label}</label>
         `).join('')}
@@ -1095,9 +1852,9 @@ function collectProjectMembers() {
 function collectDetailedPermissions() {
   return Array.from(document.querySelectorAll('#memberPermissionMatrix .permission-type-row'))
     .map(row => {
-      const permission = {
-        entryTypeId: row.dataset.entryTypeId
-      };
+      const permission = row.dataset.systemId
+        ? { systemId: row.dataset.systemId }
+        : { entryTypeId: row.dataset.entryTypeId };
       row.querySelectorAll('[data-permission-key]').forEach(input => {
         permission[input.dataset.permissionKey] = input.checked;
       });
@@ -1194,6 +1951,7 @@ function escapeAttr(value) {
 function svgIcon(name) {
   const icons = {
     api: '<path d="M4 7h16"/><path d="M4 17h16"/><path d="M7 4v16"/><path d="M17 4v16"/>',
+    chevron: '<path d="m9 18 6-6-6-6"/>',
     copy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>',
     database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',

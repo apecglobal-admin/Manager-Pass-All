@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -36,9 +36,9 @@ test('user management UI exposes pending Google access requests for admin approv
   const html = readFileSync('public/index.html', 'utf8');
 
   assert.match(html, /<option>Pending<\/option>/);
-  assert.match(app, /Yêu cầu tham gia|Yeu cau tham gia/);
-  assert.match(app, /Chờ admin phê duyệt|Cho admin phe duyet/);
-  assert.match(app, /Duyệt & phân quyền|Duyet & phan quyen/);
+  assert.match(app, /Yêu cầu tham gia|YÃªu cáº§u tham gia|Yeu cau tham gia/);
+  assert.match(app, /Chờ admin phê duyệt|Chá» admin phÃª duyá»‡t|Cho admin phe duyet/);
+  assert.match(app, /Duyệt & phân quyền|Duyá»‡t & phÃ¢n quyá»n|Duyet & phan quyen/);
   assert.match(app, /user\.status === 'Pending'[\s\S]+form\.status\.value = 'Active'/);
   assert.match(app, /\['Invited', 'Expired'\]\.includes\(user\.status\)[\s\S]+data-invite-user/);
 });
@@ -48,6 +48,36 @@ test('Google OAuth always prompts for account selection', () => {
 
   assert.match(app, /signInWithOAuth\(\{[\s\S]+provider:\s*'google'/);
   assert.match(app, /queryParams:\s*\{[\s\S]+prompt:\s*'select_account'/);
+});
+
+test('frontend exposes light mix and dark theme modes without Web Storage', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+
+  assert.match(html, /data-theme="dark"/);
+  assert.match(html, /id="themeMenuBtn"/);
+  assert.match(html, /id="themeMenu"/);
+  assert.match(html, /data-theme-option="light"/);
+  assert.match(html, /data-theme-option="mix"/);
+  assert.match(html, /data-theme-option="dark"/);
+  assert.match(html, /id="mixAccentColor" type="color"/);
+  assert.match(html, /id="mixAccent2Color" type="color"/);
+  assert.match(app, /THEME_MODES\s*=\s*new Set\(\['light', 'mix', 'dark'\]\)/);
+  assert.match(app, /themeMenuBtn'\)\?\.addEventListener\('click'/);
+  assert.match(app, /toggleThemeMenu/);
+  assert.match(app, /themeDisplayName/);
+  assert.match(app, /applyUserThemePreferences/);
+  assert.match(app, /api\('\/api\/me\/preferences'/);
+  assert.match(app, /updateMixThemeColor/);
+  assert.match(app, /rootStyle\.setProperty\('--accent'/);
+  assert.match(app, /MIX_THEME_VARIABLES/);
+  assert.match(app, /document\.documentElement\.dataset\.theme/);
+  assert.match(css, /:root\[data-theme="light"\]/);
+  assert.match(css, /:root\[data-theme="mix"\]/);
+  assert.match(css, /\.theme-menu/);
+  assert.match(css, /\.theme-menu button\.active/);
+  assert.match(css, /\.theme-picker\.mix-active \.theme-colors/);
 });
 
 test('frontend loads dynamic account types instead of hard-coded type source', () => {
@@ -74,7 +104,7 @@ test('project form manages project members and detailed project type permissions
   assert.match(app, /data-project-members/);
   assert.match(app, /openProjectMembersDialog/);
   assert.match(app, /loadProjectMembers/);
-  assert.doesNotMatch(projectMembersDialog, /saveProjectMembersBtn|Lưu thành viên|LÆ°u thÃ nh viÃªn/);
+  assert.doesNotMatch(projectMembersDialog, /saveProjectMembersBtn|LÆ°u thÃ nh viÃªn|LÃ†Â°u thÃƒÂ nh viÃƒÂªn/);
   assert.doesNotMatch(app, /saveProjectMembers/);
   assert.match(app, /openMemberPermissionDialog/);
   assert.match(app, /saveMemberPermissionDraft/);
@@ -98,15 +128,15 @@ test('project members are saved from the member permission dialog', () => {
   assert.match(savePermissions, /persistProjectMembers\(\)/);
   assert.match(removeMember, /persistProjectMembers\(\)/);
   assert.match(persistMembers, /api\(`\/api\/projects\/\$\{projectId\}\/members`/);
-  assert.doesNotMatch(app, /detailedPermissions\?\.length\s*\|\|\s*0\}\s*quyền/);
+  assert.doesNotMatch(app, /detailedPermissions\?\.length\s*\|\|\s*0\}\s*quyá»n/);
 });
 
-test('new project members default to view-only permissions for every account type', () => {
+test('new project members default to view-only permissions for every project system', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const defaultPermissions = app.match(/function defaultProjectMemberPermissions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
-  assert.match(defaultPermissions, /state\.entryTypes\.map/);
-  assert.match(defaultPermissions, /entryTypeId:\s*type\.id/);
+  assert.match(defaultPermissions, /state\.projectSystems\.map/);
+  assert.match(defaultPermissions, /systemId:\s*system\.id/);
   assert.match(defaultPermissions, /canViewEntry:\s*true/);
   assert.match(defaultPermissions, /canViewUrl:\s*false/);
   assert.match(defaultPermissions, /canViewUsername:\s*false/);
@@ -124,7 +154,7 @@ test('dialog cancel buttons close without submitting dialog forms', () => {
 
   assert.ok(dialogForms.length > 0);
   for (const form of dialogForms) {
-    const cancelButton = form.match(/<button[^>]*>\s*Hủy\s*<\/button>/)?.[0] || '';
+    const cancelButton = form.match(/<button[^>]*>\s*(Hủy|Há»§y)\s*<\/button>/)?.[0] || '';
     assert.match(cancelButton, /type="button"/);
     assert.match(cancelButton, /data-close-dialog/);
   }
@@ -146,7 +176,7 @@ test('global user permission UI only exposes permission management', () => {
   const permissionGrid = html.match(/<div class="permission-grid">[\s\S]+?<\/div>/)?.[0] || '';
 
   assert.match(permissionGrid, /value="users\.manage"/);
-  assert.match(permissionGrid, /Quáº£n lÃ½ phÃ¢n quyá»n|Quản lý phân quyền/);
+  assert.match(permissionGrid, /Quản lý phân quyền|QuÃ¡ÂºÂ£n lÃƒÂ½ phÃƒÂ¢n quyÃ¡Â»Ân|Quáº£n lÃ½ phÃ¢n quyá»n/);
   for (const removedPermission of [
     'projects.write',
     'entries.write',
@@ -192,35 +222,46 @@ test('copying an allowed password does not reveal it in the UI', () => {
   assert.match(copyPassword, /copyText\(password/);
 });
 
-test('type filters match Supabase entries that only carry a type name', () => {
+test('account list is filtered by project systems instead of account types', () => {
   const app = readFileSync('public/app.js', 'utf8');
-  const entryMatchesSelectedType = app.match(/function entryMatchesSelectedType\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const visibleEntries = app.match(/function visibleEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
-  assert.match(renderEntries, /entryMatchesSelectedType/);
-  assert.match(entryMatchesSelectedType, /entry\.typeId/);
-  assert.match(entryMatchesSelectedType, /entry\.type/);
-  assert.match(entryMatchesSelectedType, /selectedType\?\.name/);
+  assert.match(renderEntries, /visibleEntries/);
+  assert.match(visibleEntries, /entryMatchesSelectedSystem/);
+  assert.doesNotMatch(visibleEntries, /entryMatchesSelectedType/);
+  assert.match(app, /systemForEntry/);
+  assert.match(app, /data-system-filter/);
 });
 
-test('entry type management uses a dialog and refreshes dynamic types', () => {
+test('entry type mapping stays internal while system management remains visible', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
-  const openEntryTypeDialog = app.match(/function openEntryTypeDialog\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const saveEntryType = app.match(/async function saveEntryType\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const deleteEntryType = app.match(/async function deleteEntryType\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
 
+  assert.doesNotMatch(html, /id="addEntryTypeBtn"/);
+  assert.doesNotMatch(html, /id="typeFilters"/);
+  assert.match(html, /id="entryTypeSelect" hidden/);
+  assert.match(html, /id="projectSystemDialog"/);
+  assert.match(html, /id="manageSystemTypesBtn"/);
   assert.match(html, /id="entryTypeDialog"/);
-  assert.match(app, /addEntryTypeBtn'\)\?\.addEventListener\('click', openEntryTypeDialog\)/);
-  assert.doesNotMatch(app, /prompt\('T[eÃª]n lo[ạa]i account m[ớo]i'/);
-  assert.match(openEntryTypeDialog, /renderEntryTypeManager\(\)/);
-  assert.match(openEntryTypeDialog, /#entryTypeDialog'\)\.showModal\(\)/);
+  assert.doesNotMatch(app, /prompt\('T[eÃƒÂª]n lo[áº¡a]i account m[á»›o]i'/);
   assert.match(saveEntryType, /\/api\/entry-types/);
   assert.match(saveEntryType, /method: id \? 'PATCH' : 'POST'/);
   assert.match(saveEntryType, /await loadEntryTypes\(\)/);
   assert.match(saveEntryType, /renderEntryTypeManager\(\)/);
-  assert.match(css, /\.type-manager-card strong[\s\S]+color: #f8fafc/);
-  assert.match(css, /\.type-manager-card[\s\S]+background: rgba\(15, 23, 42, \.72\)/);
+  assert.match(app, /data-delete-entry-type/);
+  assert.match(app, /refreshProjectSystemTypeSelect/);
+  assert.match(deleteEntryType, /method: 'DELETE'/);
+  assert.match(deleteEntryType, /\/api\/entry-types\/\$\{id\}/);
+  assert.match(deleteEntryType, /await loadEntryTypes\(\)/);
+  assert.match(deleteEntryType, /renderEntryTypeManager\(\)/);
+  assert.match(css, /--strong-text:\s*#f8fafc/);
+  assert.match(css, /\.type-manager-card strong[\s\S]+color: var\(--strong-text\)/);
+  assert.match(css, /--surface-panel-strong:\s*rgba\(15, 23, 42, \.72\)/);
+  assert.match(css, /\.type-manager-card[\s\S]+background: var\(--surface-panel-strong\)/);
 });
 
 test('edit form resolves delegated entry type by name without requiring create permission', () => {
@@ -235,6 +276,125 @@ test('edit form resolves delegated entry type by name without requiring create p
   assert.match(openEntryDialog, /formEntry\.id \? entryTypeIdForEntry\(formEntry\) : firstCreatableEntryTypeId\(\)/);
 });
 
+test('system-based account flow treats account type as metadata', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const entryTypeOptionsForEntry = app.match(/function entryTypeOptionsForEntry\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const syncEntryTypeWithSystem = app.match(/function syncEntryTypeWithSystem\(\{ force = false \} = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderProjectSystemTypeOptions = app.match(/function renderProjectSystemTypeOptions\(selectedType = 'Web'\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(html, /id="projectSystemTypeSelect"/);
+  assert.match(html, /id="manageSystemTypesBtn"/);
+  assert.doesNotMatch(html, /name="customType"/);
+  assert.match(html, /<input name="systemId" id="entrySystemSelect" type="hidden">/);
+  assert.match(entryTypeOptionsForEntry, /state\.projectSystems\.length\) return state\.entryTypes/);
+  assert.match(syncEntryTypeWithSystem, /system\.type/);
+  assert.match(syncEntryTypeWithSystem, /matchingType/);
+  assert.doesNotMatch(app, /entrySystemSelect'\)\?\.addEventListener\('change'/);
+  assert.match(app, /data\.typeId = data\.typeId \|\| entryTypeIdForSystem\(data\.systemId\)/);
+  assert.match(app, /DEFAULT_SYSTEM_TYPES/);
+  assert.match(app, /state\.entryTypes\.filter/);
+  assert.match(app, /configuredTypes/);
+  assert.match(app, /configured\.isActive !== false/);
+  assert.doesNotMatch(app, /state\.projectSystems\.map\(system => system\.type\)/);
+  assert.doesNotMatch(renderProjectSystemTypeOptions, /__custom__/);
+  assert.doesNotMatch(app, /data\.type === '__custom__'/);
+  assert.doesNotMatch(app, /customType/);
+});
+test('new accounts are created from the active project system', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const canCreateEntry = app.match(/function canCreateEntry\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const firstCreatableSystemId = app.match(/function firstCreatableSystemId\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const loadProjectSystems = app.match(/async function loadProjectSystems\(projectId = state\.selectedProjectId\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(canCreateEntry, /!state\.selectedSystemId\) return false/);
+  assert.match(firstCreatableSystemId, /state\.selectedSystemId && state\.projectSystems\.some/);
+  assert.doesNotMatch(firstCreatableSystemId, /state\.projectSystems\[0\]/);
+  assert.match(loadProjectSystems, /state\.projectSystemsByProjectId\[String\(projectId\)\] = systems/);
+  assert.match(loadProjectSystems, /state\.selectedSystemId = systems\[0\]\.id/);
+  assert.doesNotMatch(renderSystemSubmenu, /data-system-filter="All"|Táº¥t cáº£ há»‡ thá»‘ng|TÃ¡ÂºÂ¥t cÃ¡ÂºÂ£ hÃ¡Â»â€¡ thÃ¡Â»â€˜ng/);
+  assert.match(openEntryDialog, /!state\.selectedSystemId/);
+  assert.match(openEntryDialog, /form\.systemId\.value = formEntry\.id \? \(formEntry\.systemId \|\| formEntry\.projectSystemId \|\| ''\) : firstCreatableSystemId\(\)/);
+});
+
+test('project sidebar supports independent expandable system submenus', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(app, /expandedProjectIds: new Set\(\)/);
+  assert.match(app, /projectSystemsByProjectId: \{\}/);
+  assert.match(renderProjects, /state\.expandedProjectIds\.has\(String\(project\.id\)\)/);
+  assert.match(renderProjects, /data-toggle-project-systems/);
+  assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\)/);
+  assert.match(renderProjects, /state\.expandedProjectIds\.add\(projectId\)/);
+  assert.match(renderSystemSubmenu, /state\.projectSystemsByProjectId\[projectId\]/);
+  assert.match(renderSystemSubmenu, /data-system-project-id="\$\{projectId\}"/);
+  assert.match(renderSystemSubmenu, /data-edit-system-sidebar/);
+  assert.match(renderSystemSubmenu, /data-delete-system-sidebar/);
+  assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
+  assert.match(app, /openProjectSystemDialog\(system\)/);
+  assert.match(app, /deleteProjectSystem\(systemId\)/);
+});
+
+test('admin can drag projects and systems to persist custom order', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+  const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const bindProjectDragActions = app.match(/function bindProjectDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const bindSystemDragActions = app.match(/function bindSystemDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const persistProjectOrder = app.match(/async function persistProjectOrder\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const persistSystemOrder = app.match(/async function persistSystemOrder\(projectId\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(renderProjects, /draggable="\$\{isAdmin\(\) \? 'true' : 'false'\}"/);
+  assert.match(renderProjects, /data-drag-project/);
+  assert.match(renderSystemSubmenu, /data-drag-system/);
+  assert.match(bindProjectDragActions, /text\/project-id/);
+  assert.match(bindProjectDragActions, /moveItemBefore\(state\.projects, draggedId, targetId\)/);
+  assert.match(bindSystemDragActions, /text\/system-id/);
+  assert.match(bindSystemDragActions, /persistSystemOrder\(projectId\)/);
+  assert.match(persistProjectOrder, /\/api\/projects\/reorder/);
+  assert.match(persistSystemOrder, /\/api\/projects\/\$\{projectId\}\/systems\/reorder/);
+  assert.match(css, /\.draggable-row/);
+  assert.match(css, /\.drop-target/);
+});
+
+test('bulk delete controls are limited to accounts', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+  const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const deleteSelectedEntries = app.match(/async function deleteSelectedEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.doesNotMatch(html, /id="deleteSelectedProjectsBtn"/);
+  assert.doesNotMatch(html, /id="deleteSelectedSystemsBtn"/);
+  assert.match(html, /id="deleteSelectedEntriesBtn"/);
+  assert.doesNotMatch(html, /id="toggleProjectDeleteModeBtn"/);
+  assert.doesNotMatch(html, /id="toggleSystemDeleteModeBtn"/);
+  assert.match(html, /id="toggleEntryDeleteModeBtn"/);
+  assert.doesNotMatch(app, /selectedProjectIds: new Set\(\)/);
+  assert.doesNotMatch(app, /selectedSystemKeys: new Set\(\)/);
+  assert.match(app, /selectedEntryIds: new Set\(\)/);
+  assert.doesNotMatch(app, /bulkProjectMode: false/);
+  assert.doesNotMatch(app, /bulkSystemMode: false/);
+  assert.match(app, /bulkEntryMode: false/);
+  assert.doesNotMatch(renderProjects, /data-select-project/);
+  assert.doesNotMatch(renderSystemSubmenu, /data-select-system/);
+  assert.match(renderEntries, /state\.bulkEntryMode[\s\S]+data-select-entry/);
+  assert.doesNotMatch(app, /function toggleProjectDeleteMode\(\)/);
+  assert.doesNotMatch(app, /function toggleSystemDeleteMode\(\)/);
+  assert.match(app, /function toggleEntryDeleteMode\(\)/);
+  assert.doesNotMatch(app, /Chá»n xÃ³a dá»± Ã¡n|ChÃ¡Â»Ân xÃƒÂ³a dÃ¡Â»Â± ÃƒÂ¡n/);
+  assert.doesNotMatch(app, /Há»§y chá»n dá»± Ã¡n|HÃ¡Â»Â§y chÃ¡Â»Ân dÃ¡Â»Â± ÃƒÂ¡n/);
+  assert.match(deleteSelectedEntries, /\/api\/entries\/\$\{id\}/);
+  assert.doesNotMatch(css, /\.bulk-sidebar-actions/);
+  assert.match(css, /\.bulk-check/);
+});
 test('project member UI keeps Supabase UUID identifiers as strings', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const addSelectedProjectMember = app.match(/function addSelectedProjectMember\(\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -255,10 +415,10 @@ test('empty and restricted account states use permission-aware copy', () => {
 
   assert.doesNotMatch(app, /No user/);
   assert.match(renderEntries, /entryListSubtitle\(entry\)/);
-  assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này/);
-  assert.match(app, /Chưa có tài khoản trong dự án/);
-  assert.match(entryListSubtitle, /Bị giới hạn/);
-  assert.match(entryListSubtitle, /Chưa có username/);
+  assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
+  assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);
+  assert.match(entryListSubtitle, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);
+  assert.match(entryListSubtitle, /Chưa có username|ChÆ°a cÃ³ username/);
 });
 
 test('detail view hides notes and tags when note permission is not granted', () => {
@@ -267,12 +427,12 @@ test('detail view hides notes and tags when note permission is not granted', () 
 
   assert.match(renderDetail, /canViewNotes \? escapeHtml\(entry\.notes/);
   assert.match(renderDetail, /canViewNotes \? escapeHtml\(entry\.tags\.join/);
-  assert.match(renderDetail, /Bị giới hạn/);
+  assert.match(renderDetail, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);
 });
 
 test('browser UI source does not contain mojibake text', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
 
-  assert.equal(/[ÃÄÆÏð]|áº|á»|â[^\n]*[Œœ—™–¤˜‹]/.test(`${app}\n${html}`), false);
+  assert.equal(/[ÃƒÃ„Ã†ÃÃ°]|Ã¡Âº|Ã¡Â»|Ã¢[^\n]*[Å’Å“â€”â„¢â€“Â¤Ëœâ€¹]/.test(`${app}\n${html}`), false);
 });

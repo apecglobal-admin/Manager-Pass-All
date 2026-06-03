@@ -134,6 +134,200 @@ test('password login uses Supabase Auth and creates app session', async () => {
   }
 });
 
+test('admin can delete an unused entry type but not one used by entries', async () => {
+  const app = createApp({
+    repos: createMemoryRepos({
+      entries: [{ id: 'entry-used', projectId: 'project-1', typeId: 'type-web', name: 'Used Web' }]
+    }),
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const usedDelete = await fetch(`${base}/api/entry-types/type-web`, {
+      method: 'DELETE',
+      headers: { cookie }
+    });
+    assert.equal(usedDelete.status, 400);
+    assert.match((await usedDelete.json()).error, /being used/i);
+
+    const unusedDelete = await fetch(`${base}/api/entry-types/type-other`, {
+      method: 'DELETE',
+      headers: { cookie }
+    });
+    assert.equal(unusedDelete.status, 200);
+
+    const types = await (await fetch(`${base}/api/entry-types`, { headers: { cookie } })).json();
+    assert.equal(types.some(type => type.id === 'type-other'), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('project members are authorized by project systems', async () => {
+  const repos = createMemoryRepos({
+    users: [{
+      id: 'user-admin',
+      username: 'admin@example.com',
+      displayName: 'Admin',
+      role: 'Admin',
+      status: 'Active',
+      permissions: ['users.manage'],
+      preferences: {},
+      createdAt: '2026-05-27T00:00:00.000Z'
+    }, {
+      id: 'user-member',
+      username: 'member@example.com',
+      displayName: 'Member',
+      role: 'Viewer',
+      status: 'Active',
+      permissions: [],
+      authUserId: 'auth-member'
+    }],
+    projects: [{ id: 'project-apecspace', name: 'ApecSpace', status: 'Active' }],
+    systems: [
+      { id: 'system-web', projectId: 'project-apecspace', name: 'Website chính', type: 'Web', status: 'Active' },
+      { id: 'system-cms', projectId: 'project-apecspace', name: 'CMS quản trị', type: 'CMS', status: 'Active' }
+    ],
+    memberships: [{ userId: 'user-member', projectId: 'project-apecspace' }],
+    permissions: [{
+      userId: 'user-member',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      canViewEntry: true,
+      canViewUrl: true,
+      canViewUsername: true,
+      canRevealPassword: false,
+      canViewNotes: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: false
+    }],
+    entries: [{
+      id: 'entry-web',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      typeId: 'type-web',
+      name: 'Website account',
+      username: 'web-user',
+      url: 'https://web.example',
+      notes: 'web note',
+      tags: [],
+      status: 'Active'
+    }, {
+      id: 'entry-cms',
+      projectId: 'project-apecspace',
+      systemId: 'system-cms',
+      typeId: 'type-admin',
+      name: 'CMS account',
+      username: 'cms-user',
+      url: 'https://cms.example',
+      notes: 'cms note',
+      tags: [],
+      status: 'Active'
+    }]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async token => ({
+      id: token === 'member-token' ? 'auth-member' : 'auth-admin',
+      authUserId: token === 'member-token' ? 'auth-member' : 'auth-admin',
+      email: token === 'member-token' ? 'member@example.com' : 'admin@example.com',
+      name: token === 'member-token' ? 'Member' : 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const memberLogin = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'member-token' })
+    });
+    const memberCookie = memberLogin.headers.get('set-cookie').split(';')[0];
+
+    const systems = await (await fetch(`${base}/api/projects/project-apecspace/systems`, {
+      headers: { cookie: memberCookie }
+    })).json();
+    assert.deepEqual(systems.map(system => system.name), ['Website chính']);
+
+    const entries = await (await fetch(`${base}/api/projects/project-apecspace/entries`, {
+      headers: { cookie: memberCookie }
+    })).json();
+    assert.deepEqual(entries.map(entry => entry.name), ['Website account']);
+    assert.equal(entries[0].systemId, 'system-web');
+    assert.equal(entries[0].username, 'web-user');
+  } finally {
+    await app.close();
+  }
+});
+
+test('admin can reorder projects and project systems', async () => {
+  const repos = createMemoryRepos({
+    projects: [
+      { id: 'project-a', name: 'ApecSpace', status: 'Active', sortOrder: 1 },
+      { id: 'project-b', name: 'ApecTech', status: 'Active', sortOrder: 2 }
+    ],
+    systems: [
+      { id: 'system-web', projectId: 'project-a', name: 'Website', type: 'Web', status: 'Active', sortOrder: 1 },
+      { id: 'system-cms', projectId: 'project-a', name: 'CMS', type: 'CMS', status: 'Active', sortOrder: 2 }
+    ]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const projectReorder = await fetch(`${base}/api/projects/reorder`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ids: ['project-b', 'project-a'] })
+    });
+    assert.equal(projectReorder.status, 200);
+
+    const systemReorder = await fetch(`${base}/api/projects/project-a/systems/reorder`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ids: ['system-cms', 'system-web'] })
+    });
+    assert.equal(systemReorder.status, 200);
+
+    assert.deepEqual((await repos.projects.list()).map(project => project.id), ['project-b', 'project-a']);
+    assert.deepEqual((await repos.projectSystems.listForProject('project-a')).map(system => system.id), ['system-cms', 'system-web']);
+  } finally {
+    await app.close();
+  }
+});
+
 test('default Supabase invite service sends packaged app download link from user creation', async () => {
   const previousEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
@@ -451,6 +645,50 @@ test('signed session cookie survives app restart', async () => {
   }
 });
 
+test('current user theme preferences persist in session', async () => {
+  const repos = createMemoryRepos();
+  const app = createApp({
+    repos,
+    authenticateWithPassword: async () => ({
+      email: 'admin@example.com',
+      authUserId: 'auth-admin',
+      accessToken: 'token-admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const saved = await fetch(`${base}/api/me/preferences`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        theme: 'mix',
+        mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+      })
+    });
+    assert.equal(saved.status, 200);
+    const savedBody = await saved.json();
+    assert.deepEqual(savedBody.preferences, {
+      theme: 'mix',
+      mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+    });
+
+    const session = await fetch(`${base}/api/session`, { headers: { cookie } });
+    const sessionBody = await session.json();
+    assert.equal(sessionBody.user.preferences.theme, 'mix');
+    assert.equal(sessionBody.user.preferences.mixTheme.accent, '#22c55e');
+  } finally {
+    await app.close();
+  }
+});
+
 test('login session cookie stays small when Supabase access token is large', async () => {
   const largeAccessToken = `token.${'x'.repeat(5000)}.sig`;
   const app = createApp({
@@ -606,15 +844,16 @@ function createMemoryRepos(overrides = {}) {
       permissions: ['users.manage'],
       createdAt: '2026-05-27T00:00:00.000Z'
     }],
-    projects: [],
-    entries: [],
+    projects: overrides.projects || [],
+    systems: overrides.systems || [],
+    entries: overrides.entries || [],
     entryTypes: [
       { id: 'type-web', name: 'Web', slug: 'web', sortOrder: 1, isActive: true },
       { id: 'type-admin', name: 'Admin', slug: 'admin', sortOrder: 2, isActive: true },
       { id: 'type-other', name: 'Other', slug: 'other', sortOrder: 10, isActive: true }
     ],
-    memberships: [],
-    permissions: [],
+    memberships: overrides.memberships || [],
+    permissions: overrides.permissions || [],
     activity: [],
     settings: { autoLockMinutes: 15 }
   };
@@ -636,7 +875,8 @@ function createMemoryRepos(overrides = {}) {
           displayName: input.displayName || input.username,
           role: bootstrapAdmin ? 'Admin' : 'Viewer',
           status: bootstrapAdmin ? 'Active' : 'Pending',
-          permissions: bootstrapAdmin ? ['users.manage'] : []
+          permissions: bootstrapAdmin ? ['users.manage'] : [],
+          preferences: {}
         };
         rows.users.push(user);
         return user;
@@ -654,7 +894,8 @@ function createMemoryRepos(overrides = {}) {
           displayName: input.displayName || input.username,
           role: input.role || 'Viewer',
           status: input.status || 'Active',
-          permissions: input.permissions || []
+          permissions: input.permissions || [],
+          preferences: input.preferences || {}
         };
         rows.users.push(user);
         return user;
@@ -667,6 +908,11 @@ function createMemoryRepos(overrides = {}) {
       async update(id, input) {
         const user = rows.users.find(item => item.id === id);
         Object.assign(user, input);
+        return user;
+      },
+      async updatePreferences(id, preferences) {
+        const user = rows.users.find(item => item.id === id);
+        user.preferences = { ...(user.preferences || {}), ...preferences };
         return user;
       },
       async delete(id) {
@@ -692,6 +938,12 @@ function createMemoryRepos(overrides = {}) {
         const type = rows.entryTypes.find(item => item.id === id);
         Object.assign(type, input);
         return type;
+      },
+      async delete(id) {
+        if (rows.entries.some(entry => String(entry.typeId || entry.entryTypeId) === String(id))) {
+          throw new Error('Entry type is being used by entries');
+        }
+        rows.entryTypes = rows.entryTypes.filter(type => String(type.id) !== String(id));
       }
     },
     projects: {
@@ -709,7 +961,8 @@ function createMemoryRepos(overrides = {}) {
           id: `project-${rows.projects.length + 1}`,
           name: input.name,
           description: input.description || '',
-          status: input.status || 'Active'
+          status: input.status || 'Active',
+          sortOrder: input.sortOrder || rows.projects.length + 1
         };
         rows.projects.push(project);
         return project;
@@ -721,6 +974,52 @@ function createMemoryRepos(overrides = {}) {
       },
       async delete(id) {
         rows.projects = rows.projects.filter(project => project.id !== id);
+      },
+      async reorder(ids) {
+        ids.forEach((id, index) => {
+          const project = rows.projects.find(item => String(item.id) === String(id));
+          if (project) project.sortOrder = index + 1;
+        });
+        rows.projects.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+      }
+    },
+    projectSystems: {
+      async listForProject(projectId) {
+        return rows.systems.filter(system => String(system.projectId) === String(projectId));
+      },
+      async get(id) {
+        return rows.systems.find(system => String(system.id) === String(id)) || null;
+      },
+      async create(input) {
+        const system = {
+          id: `system-${rows.systems.length + 1}`,
+          projectId: input.projectId,
+          name: input.name,
+          type: input.type || 'Web',
+          description: input.description || '',
+          status: input.status || 'Active',
+          sortOrder: input.sortOrder || rows.systems.filter(system => String(system.projectId) === String(input.projectId)).length + 1
+        };
+        rows.systems.push(system);
+        return system;
+      },
+      async update(id, input) {
+        const system = rows.systems.find(item => String(item.id) === String(id));
+        Object.assign(system, input);
+        return system;
+      },
+      async delete(id) {
+        if (rows.entries.some(entry => String(entry.systemId || entry.projectSystemId) === String(id))) {
+          throw new Error('System is being used by entries');
+        }
+        rows.systems = rows.systems.filter(system => String(system.id) !== String(id));
+      },
+      async reorder(projectId, ids) {
+        ids.forEach((id, index) => {
+          const system = rows.systems.find(item => String(item.projectId) === String(projectId) && String(item.id) === String(id));
+          if (system) system.sortOrder = index + 1;
+        });
+        rows.systems.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
       }
     },
     entries: {
@@ -740,6 +1039,7 @@ function createMemoryRepos(overrides = {}) {
         const entry = {
           id: `entry-${rows.entries.length + 1}`,
           projectId: input.projectId,
+          systemId: input.systemId || input.projectSystemId || null,
           typeId: input.typeId,
           name: input.name,
           type: input.type || 'Other',
@@ -813,6 +1113,9 @@ function createMemoryRepos(overrides = {}) {
     detailedPermissions: {
       async get(userId, projectId, entryTypeId) {
         return rows.permissions.find(item => item.userId === userId && item.projectId === projectId && item.entryTypeId === entryTypeId) || null;
+      },
+      async getBySystem(userId, projectId, systemId) {
+        return rows.permissions.find(item => item.userId === userId && item.projectId === projectId && item.systemId === systemId) || null;
       },
       async listForUser(userId) {
         return rows.permissions.filter(item => item.userId === userId);
