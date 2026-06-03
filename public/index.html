@@ -73,21 +73,23 @@
         <div class="theme-picker" aria-label="Chọn chế độ giao diện">
           <button id="themeMenuBtn" class="theme-menu-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
             <span id="themeMenuLabel">Tối</span>
-            <span class="theme-menu-caret">⌄</span>
+            <span class="theme-menu-caret" aria-hidden="true"></span>
           </button>
           <div id="themeMenu" class="theme-menu hidden" role="listbox" aria-label="Chọn theme">
             <button type="button" role="option" data-theme-option="light">Sáng</button>
             <button type="button" role="option" data-theme-option="mix">Mix</button>
             <button type="button" role="option" data-theme-option="dark">Tối</button>
           </div>
-          <span class="theme-colors" aria-label="Chọn màu Mix">
-            <label class="theme-color-field" title="Màu chính Mix">
-              <input id="mixAccentColor" type="color" value="#14b8a6" aria-label="Màu chính Mix">
-            </label>
-            <label class="theme-color-field" title="Màu phụ Mix">
-              <input id="mixAccent2Color" type="color" value="#f59e0b" aria-label="Màu phụ Mix">
-            </label>
-          </span>
+          <div id="mixColorPopover" class="mix-color-popover hidden" aria-label="Chọn màu Mix">
+            <div class="theme-colors">
+              <label class="theme-color-field" title="Màu chính Mix">
+                <input id="mixAccentColor" type="color" value="#14b8a6" aria-label="Màu chính Mix">
+              </label>
+              <label class="theme-color-field" title="Màu phụ Mix">
+                <input id="mixAccent2Color" type="color" value="#f59e0b" aria-label="Màu phụ Mix">
+              </label>
+            </div>
+          </div>
         </div>
         <div id="currentUserTopbar" class="user-topbar"></div>
         <button id="lockBtn" class="topbar-icon-btn" title="Khóa">🔒</button>
@@ -122,7 +124,6 @@
           </div>
           <button id="toggleEntryDeleteModeBtn" class="btn-outline hidden" type="button">Chọn xóa account</button>
           <button id="deleteSelectedEntriesBtn" class="btn-outline danger hidden" type="button">Xóa account đã chọn</button>
-          <button id="addSystemBtn" class="btn-outline hidden" type="button">＋ Hệ thống</button>
           <button id="newEntryBtn" class="btn-accent" disabled>＋ Thêm account</button>
         </section>
 
@@ -181,7 +182,6 @@
         </div>
         <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú ngắn"></textarea></label>
         <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveProjectSystemBtn" class="btn-accent" value="default">Lưu hệ thống</button></div>
-        <section class="form-section compact-section"><div class="section-label">DANH SÁCH HỆ THỐNG</div><div id="projectSystemList" class="type-manager-list"></div></section>
       </form>
     </dialog>
     <dialog id="memberPermissionDialog">

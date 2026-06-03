@@ -58,6 +58,13 @@ test('frontend exposes light mix and dark theme modes without Web Storage', () =
   assert.match(html, /data-theme="dark"/);
   assert.match(html, /id="themeMenuBtn"/);
   assert.match(html, /id="themeMenu"/);
+  assert.match(html, /<span class="theme-menu-caret" aria-hidden="true"><\/span>/);
+  assert.doesNotMatch(html, /class="theme-menu-caret">[^<]+<\/span>/);
+  const themePicker = html.match(/<div class="theme-picker"[\s\S]+?<\/div>\s*<div id="currentUserTopbar"/)?.[0] || '';
+  const themeMenu = html.match(/<div id="themeMenu"[\s\S]+?<\/div>/)?.[0] || '';
+  assert.match(themePicker, /id="mixColorPopover"/);
+  assert.match(themePicker, /id="mixColorPopover" class="mix-color-popover hidden"/);
+  assert.doesNotMatch(themeMenu, /class="theme-colors"/);
   assert.match(html, /data-theme-option="light"/);
   assert.match(html, /data-theme-option="mix"/);
   assert.match(html, /data-theme-option="dark"/);
@@ -66,6 +73,8 @@ test('frontend exposes light mix and dark theme modes without Web Storage', () =
   assert.match(app, /THEME_MODES\s*=\s*new Set\(\['light', 'mix', 'dark'\]\)/);
   assert.match(app, /themeMenuBtn'\)\?\.addEventListener\('click'/);
   assert.match(app, /toggleThemeMenu/);
+  assert.match(app, /openMixColorPopover/);
+  assert.match(app, /closeMixColorPopover/);
   assert.match(app, /themeDisplayName/);
   assert.match(app, /applyUserThemePreferences/);
   assert.match(app, /api\('\/api\/me\/preferences'/);
@@ -77,7 +86,20 @@ test('frontend exposes light mix and dark theme modes without Web Storage', () =
   assert.match(css, /:root\[data-theme="mix"\]/);
   assert.match(css, /\.theme-menu/);
   assert.match(css, /\.theme-menu button\.active/);
-  assert.match(css, /\.theme-picker\.mix-active \.theme-colors/);
+  assert.doesNotMatch(css, /\.theme-picker\.mix-active \.theme-colors/);
+  assert.doesNotMatch(css, /\.theme-menu \.theme-colors/);
+  assert.match(css, /\.mix-color-popover/);
+  assert.match(css, /\.mix-color-popover\.hidden/);
+  const themeButtonCss = css.match(/\.theme-menu-btn\s*\{[^}]+\}/)?.[0] || '';
+  const themeCaretCss = css.match(/\.theme-menu-caret\s*\{[^}]+\}/)?.[0] || '';
+  const themeCaretBeforeCss = css.match(/\.theme-menu-caret::before\s*\{[^}]+\}/)?.[0] || '';
+  assert.match(themeButtonCss, /display:\s*inline-flex/);
+  assert.match(themeButtonCss, /align-items:\s*center/);
+  assert.match(themeCaretCss, /display:\s*inline-flex/);
+  assert.match(themeCaretCss, /align-items:\s*center/);
+  assert.match(themeCaretBeforeCss, /border-right:/);
+  assert.match(themeCaretBeforeCss, /border-bottom:/);
+  assert.match(themeCaretBeforeCss, /transform:\s*rotate\(45deg\)/);
 });
 
 test('frontend loads dynamic account types instead of hard-coded type source', () => {
@@ -301,6 +323,19 @@ test('system-based account flow treats account type as metadata', () => {
   assert.doesNotMatch(app, /data\.type === '__custom__'/);
   assert.doesNotMatch(app, /customType/);
 });
+
+test('project system dialog only edits one system and closes after save', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const projectSystemDialog = html.match(/<dialog id="projectSystemDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const saveProjectSystem = app.match(/async function saveProjectSystem\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.doesNotMatch(projectSystemDialog, /projectSystemList/);
+  assert.doesNotMatch(projectSystemDialog, /DANH S[ÁAÃ]/);
+  assert.match(saveProjectSystem, /projectSystemDialog'\)\?\.close\(\)/);
+  assert.doesNotMatch(saveProjectSystem, /renderProjectSystemManager\(\)/);
+});
+
 test('new accounts are created from the active project system', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const canCreateEntry = app.match(/function canCreateEntry\(\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -321,11 +356,14 @@ test('new accounts are created from the active project system', () => {
 
 test('project sidebar supports independent expandable system submenus', () => {
   const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(app, /expandedProjectIds: new Set\(\)/);
   assert.match(app, /projectSystemsByProjectId: \{\}/);
+  assert.doesNotMatch(html, /id="addSystemBtn"/);
+  assert.doesNotMatch(app, /addSystemBtn/);
   assert.match(renderProjects, /state\.expandedProjectIds\.has\(String\(project\.id\)\)/);
   assert.match(renderProjects, /data-toggle-project-systems/);
   assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\)/);

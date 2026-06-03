@@ -56,14 +56,16 @@ function bindEvents() {
   $('#themeMenuBtn')?.addEventListener('click', toggleThemeMenu);
   document.querySelectorAll('[data-theme-option]').forEach(button => {
     button.addEventListener('click', () => {
-      setTheme(button.dataset.themeOption);
+      const selectedTheme = button.dataset.themeOption;
+      setTheme(selectedTheme);
       closeThemeMenu();
+      if (selectedTheme === 'mix') openMixColorPopover();
+      else closeMixColorPopover();
     });
   });
   $('#mixAccentColor')?.addEventListener('input', event => updateMixThemeColor('accent', event.target.value));
   $('#mixAccent2Color')?.addEventListener('input', event => updateMixThemeColor('accent2', event.target.value));
   $('#newProjectBtn').addEventListener('click', () => openProjectDialog());
-  $('#addSystemBtn')?.addEventListener('click', () => openProjectSystemDialog());
   $('#projectSystemForm')?.addEventListener('submit', saveProjectSystem);
   $('#manageSystemTypesBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#newEntryBtn').addEventListener('click', () => openEntryDialog());
@@ -90,7 +92,10 @@ function bindEvents() {
   document.addEventListener('mousemove', resetAutoLock);
   document.addEventListener('keydown', resetAutoLock);
   document.addEventListener('click', event => {
-    if (!event.target.closest('.theme-picker')) closeThemeMenu();
+    if (!event.target.closest('.theme-picker')) {
+      closeThemeMenu();
+      closeMixColorPopover();
+    }
   });
   syncSidebarState();
 }
@@ -105,7 +110,6 @@ function setTheme(theme, { silent = false } = {}) {
   const nextTheme = THEME_MODES.has(theme) ? theme : 'dark';
   state.uiTheme = nextTheme;
   document.documentElement.dataset.theme = nextTheme;
-  document.querySelector('.theme-picker')?.classList.toggle('mix-active', nextTheme === 'mix');
   $('#themeMenuLabel').textContent = themeDisplayName(nextTheme);
   document.querySelectorAll('[data-theme-option]').forEach(button => {
     const active = button.dataset.themeOption === nextTheme;
@@ -128,11 +132,20 @@ function toggleThemeMenu(event) {
   const willOpen = menu?.classList.contains('hidden');
   menu?.classList.toggle('hidden', !willOpen);
   button?.setAttribute('aria-expanded', String(Boolean(willOpen)));
+  if (willOpen) closeMixColorPopover();
 }
 
 function closeThemeMenu() {
   $('#themeMenu')?.classList.add('hidden');
   $('#themeMenuBtn')?.setAttribute('aria-expanded', 'false');
+}
+
+function openMixColorPopover() {
+  $('#mixColorPopover')?.classList.remove('hidden');
+}
+
+function closeMixColorPopover() {
+  $('#mixColorPopover')?.classList.add('hidden');
 }
 
 function themeDisplayName(theme) {
@@ -704,7 +717,6 @@ function renderHeader() {
   $('#newEntryBtn').title = missingSystems
     ? 'Tạo hệ thống trước khi thêm account'
     : '';
-  $('#addSystemBtn')?.classList.toggle('hidden', !project || !can('users.manage'));
   const title = $('#currentProjectName');
   const meta = $('#currentProjectMeta');
   if (title) title.textContent = project?.name || 'Tất cả dự án';
@@ -1109,7 +1121,6 @@ async function openProjectSystemDialog(system = {}) {
   renderProjectSystemTypeOptions(system.type || 'Web', { includeSelected: Boolean(system.id) });
   form.description.value = system.description || '';
   form.status.value = system.status || 'Active';
-  renderProjectSystemManager();
   $('#projectSystemDialog').showModal();
   focusDialogField('#projectSystemDialog', 'input[name="name"]');
 }
@@ -1135,8 +1146,7 @@ async function saveProjectSystem(event) {
   if (savedSystem?.id) state.selectedSystemId = savedSystem.id;
   await loadProjectSystems(projectId);
   renderProjects();
-  resetProjectSystemForm(projectId);
-  renderProjectSystemManager();
+  $('#projectSystemDialog')?.close();
   await loadEntries();
 }
 
@@ -1183,33 +1193,6 @@ function renderProjectSystemTypeOptions(selectedType = 'Web', options = {}) {
   select.value = types.find(type => type.toLowerCase() === selected.toLowerCase()) || types[0] || '';
 }
 
-function renderProjectSystemManager() {
-  const list = $('#projectSystemList');
-  if (!list) return;
-  list.innerHTML = state.projectSystems.map(system => `
-    <article class="type-manager-card">
-      <div>
-        <strong>${escapeHtml(system.name)}</strong>
-        <small>${escapeHtml(system.type || 'Web')} - ${escapeHtml(system.description || 'Chưa có mô tả')}</small>
-      </div>
-      <span class="role-chip">${escapeHtml(system.status || 'Active')}</span>
-      <div class="user-actions">
-        <button type="button" data-edit-system="${system.id}">Sửa</button>
-        <button type="button" class="danger" data-delete-system="${system.id}">Xóa</button>
-      </div>
-    </article>
-  `).join('') || '<p class="form-hint">Chưa có hệ thống. Tạo Website, CMS, App hoặc API đầu tiên cho công ty này.</p>';
-  document.querySelectorAll('[data-edit-system]').forEach(button => {
-    button.addEventListener('click', () => {
-      const system = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystem));
-      if (system) openProjectSystemDialog(system);
-    });
-  });
-  document.querySelectorAll('[data-delete-system]').forEach(button => {
-    button.addEventListener('click', () => deleteProjectSystem(button.dataset.deleteSystem));
-  });
-}
-
 async function deleteProjectSystem(id) {
   const projectId = state.selectedProjectId;
   const system = state.projectSystems.find(item => String(item.id) === String(id));
@@ -1220,7 +1203,6 @@ async function deleteProjectSystem(id) {
     if (String(state.selectedSystemId) === String(id)) state.selectedSystemId = null;
     await loadProjectSystems(projectId);
     renderProjects();
-    renderProjectSystemManager();
     await loadEntries();
     toast('Đã xóa hệ thống');
   } catch (error) {
@@ -1673,7 +1655,6 @@ function applyPermissionUi() {
   $('#usersNavBtn')?.classList.toggle('hidden', !can('users.manage'));
   const npb = $('#newProjectBtn'); if (npb) npb.disabled = !isAdmin();
   const ib = $('#importBtn'); if (ib) ib.disabled = !isAdmin();
-  $('#addSystemBtn')?.classList.toggle('hidden', !can('users.manage') || !currentProject());
   const sjb = $('#saveJsonBtn'); if (sjb) sjb.disabled = !isAdmin();
   const ejb = $('#exportJsonBtn'); if (ejb) ejb.disabled = !isAdmin();
   const ecb = $('#exportCsvBtn'); if (ecb) ecb.disabled = !isAdmin();
