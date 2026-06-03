@@ -17,6 +17,7 @@ export function createSupabaseRepositories({ supabase, encryptionKey }) {
     users: usersRepo(supabase),
     entryTypes: entryTypesRepo(supabase),
     projects: projectsRepo(supabase),
+    projectSystems: projectSystemsRepo(supabase),
     entries: entriesRepo(supabase, encryptionKey),
     projectMemberships: projectMembershipsRepo(supabase),
     detailedPermissions: detailedPermissionsRepo(supabase),
@@ -85,6 +86,7 @@ function usersRepo(client) {
           role,
           status: bootstrapAdmin ? 'Active' : 'Pending',
           permissions: normalizePermissions([], role),
+          preferences: {},
           accepted_at: bootstrapAdmin ? new Date().toISOString() : null
         })
         .select()
@@ -114,6 +116,7 @@ function usersRepo(client) {
           role,
           status: normalizeUserStatus(input.status || 'Active'),
           permissions: normalizePermissions(input.permissions, role),
+          preferences: sanitizeUserPreferences(input.preferences),
           invitation_sent_at: input.invitationSentAt || null,
           invite_expires_at: input.inviteExpiresAt || null,
           accepted_at: input.acceptedAt || null
@@ -152,6 +155,25 @@ function usersRepo(client) {
           permissions: input.permissions === undefined
             ? normalizePermissions(current.permissions, role)
             : normalizePermissions(input.permissions, role),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return mapUser(data);
+    },
+    async updatePreferences(id, preferences = {}) {
+      const current = await this.get(id);
+      if (!current) throw new Error('User not found');
+      const nextPreferences = {
+        ...(current.preferences || {}),
+        ...sanitizeUserPreferences(preferences)
+      };
+      const { data, error } = await client
+        .from('app_users')
+        .update({
+          preferences: nextPreferences,
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
@@ -218,6 +240,19 @@ function entryTypesRepo(client) {
       if (error) throw error;
       return mapEntryType(data);
     },
+    async delete(id) {
+      const { data: usedEntries, error: usedEntriesError } = await client
+        .from('entries')
+        .select('id')
+        .eq('entry_type_id', id)
+        .is('deleted_at', null)
+        .limit(1);
+      if (usedEntriesError) throw usedEntriesError;
+      if (usedEntries?.length) throw new Error('Entry type is being used by entries');
+
+      const { error } = await client.from('entry_types').delete().eq('id', id);
+      if (error) throw error;
+    },
     defaults() {
       return DEFAULT_ENTRY_TYPES;
     }
@@ -231,6 +266,7 @@ function projectsRepo(client) {
         .from('projects')
         .select('*')
         .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
         .order('name', { ascending: true });
       if (error) throw error;
       return data.map(mapProject);
@@ -243,6 +279,7 @@ function projectsRepo(client) {
         .select('*')
         .in('id', projectIds)
         .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
         .order('name', { ascending: true });
       if (error) throw error;
       return data.map(mapProject);
@@ -260,7 +297,8 @@ function projectsRepo(client) {
           vault_id: vaultId,
           name: input.name.trim(),
           description: input.description || '',
-          status: input.status || 'Active'
+          status: input.status || 'Active',
+          sort_order: input.sortOrder || await nextProjectSortOrder(client)
         })
         .select()
         .single();
@@ -268,14 +306,14 @@ function projectsRepo(client) {
       return mapProject(data);
     },
     async update(id, input) {
+      const patch = { updated_at: new Date().toISOString() };
+      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.description !== undefined) patch.description = input.description || '';
+      if (input.status !== undefined) patch.status = input.status || 'Active';
+      if (input.sortOrder !== undefined) patch.sort_order = Number(input.sortOrder) || 0;
       const { data, error } = await client
         .from('projects')
-        .update({
-          name: input.name.trim(),
-          description: input.description || '',
-          status: input.status || 'Active',
-          updated_at: new Date().toISOString()
-        })
+        .update(patch)
         .eq('id', id)
         .select()
         .single();
@@ -288,6 +326,99 @@ function projectsRepo(client) {
         .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id);
       if (error) throw error;
+    },
+    async reorder(ids = []) {
+      const projectIds = uniqueStrings(ids);
+      for (const [index, id] of projectIds.entries()) {
+        const { error } = await client
+          .from('projects')
+          .update({ sort_order: index + 1, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .is('deleted_at', null);
+        if (error) throw error;
+      }
+    }
+  };
+}
+
+function projectSystemsRepo(client) {
+  return {
+    async listForProject(projectId) {
+      const { data, error } = await client
+        .from('project_systems')
+        .select('*')
+        .eq('project_id', projectId)
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return data.map(mapProjectSystem);
+    },
+    async get(id) {
+      const { data, error } = await client
+        .from('project_systems')
+        .select('*')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .single();
+      if (error) throw error;
+      return mapProjectSystem(data);
+    },
+    async create(input) {
+      const name = String(input.name || '').trim();
+      if (!name) throw new Error('System name is required');
+      const { data, error } = await client
+        .from('project_systems')
+        .insert({
+          project_id: input.projectId,
+          name,
+          type: input.type || 'Web',
+          description: input.description || '',
+          status: input.status || 'Active',
+          sort_order: input.sortOrder || await nextProjectSystemSortOrder(client, input.projectId)
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapProjectSystem(data);
+    },
+    async update(id, input) {
+      const patch = { updated_at: new Date().toISOString() };
+      if (input.name !== undefined) patch.name = String(input.name || '').trim();
+      if (input.type !== undefined) patch.type = input.type || 'Web';
+      if (input.description !== undefined) patch.description = input.description || '';
+      if (input.status !== undefined) patch.status = input.status || 'Active';
+      if (input.sortOrder !== undefined) patch.sort_order = Number(input.sortOrder) || 0;
+      const { data, error } = await client.from('project_systems').update(patch).eq('id', id).select().single();
+      if (error) throw error;
+      return mapProjectSystem(data);
+    },
+    async delete(id) {
+      const { data: usedEntries, error: usedEntriesError } = await client
+        .from('entries')
+        .select('id')
+        .eq('system_id', id)
+        .is('deleted_at', null)
+        .limit(1);
+      if (usedEntriesError) throw usedEntriesError;
+      if (usedEntries?.length) throw new Error('System is being used by entries');
+      const { error } = await client
+        .from('project_systems')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    async reorder(projectId, ids = []) {
+      const systemIds = uniqueStrings(ids);
+      for (const [index, id] of systemIds.entries()) {
+        const { error } = await client
+          .from('project_systems')
+          .update({ sort_order: index + 1, updated_at: new Date().toISOString() })
+          .eq('project_id', projectId)
+          .eq('id', id)
+          .is('deleted_at', null);
+        if (error) throw error;
+      }
     }
   };
 }
@@ -339,6 +470,7 @@ function entriesRepo(client, encryptionKey) {
         .insert({
           vault_id: input.vaultId || project?.vault_id || await resolveVaultId(client, input.ownerAuthUserId || input.authUserId),
           project_id: input.projectId,
+          system_id: input.systemId || input.projectSystemId || null,
           entry_type_id: input.typeId || input.entryTypeId || null,
           name: input.name.trim(),
           type: input.type || 'Other',
@@ -358,6 +490,7 @@ function entriesRepo(client, encryptionKey) {
     async update(id, input) {
       const patch = {
         project_id: input.projectId,
+        system_id: input.systemId || input.projectSystemId || null,
         entry_type_id: input.typeId || input.entryTypeId || null,
         name: input.name.trim(),
         type: input.type || 'Other',
@@ -435,6 +568,10 @@ function detailedPermissionsRepo(client) {
       const rows = await this.listForUser(userId);
       return rows.find(row => String(row.projectId) === String(projectId) && String(row.entryTypeId) === String(entryTypeId)) || null;
     },
+    async getBySystem(userId, projectId, systemId) {
+      const rows = await this.listForUser(userId);
+      return rows.find(row => String(row.projectId) === String(projectId) && String(row.systemId) === String(systemId)) || null;
+    },
     async listForUser(userId) {
       const { data, error } = await client.from('detailed_permissions').select('*').eq('user_id', userId);
       if (error) throw error;
@@ -446,7 +583,9 @@ function detailedPermissionsRepo(client) {
       return data.map(mapPermission);
     },
     async upsert(userId, projectId, entryTypeId, permission) {
-      const existing = await this.get(userId, projectId, entryTypeId);
+      const existing = permission.systemId
+        ? await this.getBySystem(userId, projectId, permission.systemId)
+        : await this.get(userId, projectId, entryTypeId);
       const payload = permissionPayload({ userId, projectId, entryTypeId, ...permission });
       if (existing) {
         const { data, error } = await client.from('detailed_permissions').update(payload).eq('id', existing.id).select().single();
@@ -618,6 +757,18 @@ async function nextTypeSortOrder(client) {
   return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
 }
 
+async function nextProjectSortOrder(client) {
+  const { data, error } = await client.from('projects').select('sort_order').is('deleted_at', null);
+  if (error) throw error;
+  return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
+}
+
+async function nextProjectSystemSortOrder(client, projectId) {
+  const { data, error } = await client.from('project_systems').select('sort_order').eq('project_id', projectId).is('deleted_at', null);
+  if (error) throw error;
+  return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
+}
+
 function mapUser(row) {
   if (!row) return null;
   const role = normalizeRole(row.role);
@@ -629,6 +780,7 @@ function mapUser(row) {
     role,
     status: normalizeUserStatus(row.status),
     permissions: normalizePermissions(row.permissions, role),
+    preferences: sanitizeUserPreferences(row.preferences),
     invitationSentAt: row.invitation_sent_at || null,
     inviteExpiresAt: row.invite_expires_at || null,
     acceptedAt: row.accepted_at || null,
@@ -657,6 +809,43 @@ function mapProject(row) {
     name: row.name,
     description: row.description || '',
     status: row.status || 'Active',
+    sortOrder: row.sort_order || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function sanitizeUserPreferences(preferences = {}) {
+  const input = preferences && typeof preferences === 'object' ? preferences : {};
+  const output = {};
+  const theme = String(input.theme || '').trim();
+  if (['light', 'mix', 'dark'].includes(theme)) output.theme = theme;
+  const mixTheme = input.mixTheme && typeof input.mixTheme === 'object' ? input.mixTheme : {};
+  const accent = normalizeHexColor(mixTheme.accent);
+  const accent2 = normalizeHexColor(mixTheme.accent2);
+  if (accent || accent2) {
+    output.mixTheme = {};
+    if (accent) output.mixTheme.accent = accent;
+    if (accent2) output.mixTheme.accent2 = accent2;
+  }
+  return output;
+}
+
+function normalizeHexColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(color) ? color : '';
+}
+
+function mapProjectSystem(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    name: row.name,
+    type: row.type || 'Web',
+    description: row.description || '',
+    status: row.status || 'Active',
+    sortOrder: row.sort_order || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -667,6 +856,8 @@ function mapEntry(row, encryptionKey) {
   return {
     id: row.id,
     projectId: row.project_id,
+    systemId: row.system_id || null,
+    projectSystemId: row.system_id || null,
     typeId: row.entry_type_id || null,
     entryTypeId: row.entry_type_id || null,
     name: row.name,
@@ -688,6 +879,7 @@ function mapEntryExport(row, encryptionKey, includePasswords) {
   const entry = mapEntry(row, encryptionKey);
   const exported = {
     projectId: entry.projectId,
+    systemId: entry.systemId,
     name: entry.name,
     type: entry.type,
     environment: entry.environment,
@@ -707,7 +899,9 @@ function mapPermission(row) {
     id: row.id,
     userId: row.user_id,
     projectId: row.project_id,
-    entryTypeId: row.entry_type_id,
+    systemId: row.system_id || null,
+    projectSystemId: row.system_id || null,
+    entryTypeId: row.entry_type_id || null,
     canViewEntry: Boolean(row.can_view_entry),
     canViewUrl: Boolean(row.can_view_url),
     canViewUsername: Boolean(row.can_view_username),
@@ -723,7 +917,8 @@ function permissionPayload(permission) {
   return {
     user_id: permission.userId,
     project_id: permission.projectId,
-    entry_type_id: permission.entryTypeId,
+    system_id: permission.systemId || permission.projectSystemId || null,
+    entry_type_id: permission.entryTypeId || null,
     can_view_entry: Boolean(permission.canViewEntry),
     can_view_url: Boolean(permission.canViewUrl),
     can_view_username: Boolean(permission.canViewUsername),
