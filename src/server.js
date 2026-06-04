@@ -12,7 +12,35 @@ import WebSocket from 'ws';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
 
-export function createApp({
+export function createVercelHandler(options = {}) {
+  return createRequestHandler({
+    ...options,
+    statelessSessions: true,
+    sessionStore: null
+  });
+}
+
+export function createApp(options = {}) {
+  const handler = createRequestHandler(options);
+  const server = createServer(handler);
+
+  return {
+    listen(port = APP_PORT) {
+      return new Promise(resolve => {
+        server.listen(port, '127.0.0.1', () => resolve(server));
+      });
+    },
+    close() {
+      return new Promise(resolve => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  };
+}
+
+export function createRequestHandler({
   encryptionKey = getEncryptionKey(),
   authenticateWithPassword,
   verifyGoogleAccessToken,
@@ -26,7 +54,8 @@ export function createApp({
   createSupabaseClient = createClient,
   authDeleteFetch = fetch,
   createReposForAccessToken,
-  sessionStore = createFileSessionStore()
+  statelessSessions = false,
+  sessionStore = statelessSessions ? null : createFileSessionStore()
 } = {}) {
   const appSupabase = supabase || (repos ? null : createServerSupabaseClient(createSupabaseClient));
   const appRepos = repos || createSupabaseRepositories({ supabase: appSupabase, encryptionKey });
@@ -67,9 +96,16 @@ export function createApp({
     sessionSecret: encryptionKey.toString('base64'),
     repos: appRepos,
     createReposForAccessToken: scopedReposForAccessToken,
-    sessionStore
+    sessionStore,
+    statelessSessions
   });
-  const server = createServer(async (req, res) => {
+  return async function handleRequest(req, res) {
+    applyCorsHeaders(req, res);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
       const config = getPublicSupabaseConfig();
       res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' });
@@ -92,22 +128,36 @@ export function createApp({
     if (serveStatic(req, res, publicDir)) return;
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('Not found');
-  });
-
-  return {
-    listen(port = APP_PORT) {
-      return new Promise(resolve => {
-        server.listen(port, '127.0.0.1', () => resolve(server));
-      });
-    },
-    close() {
-      return new Promise(resolve => {
-        server.close(() => {
-          resolve();
-        });
-      });
-    }
   };
+}
+
+function applyCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || !allowedCorsOrigins().has(origin)) return;
+  res.setHeader('access-control-allow-origin', origin);
+  res.setHeader('access-control-allow-credentials', 'true');
+  res.setHeader('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('access-control-allow-headers', 'content-type,authorization,apikey');
+  res.setHeader('vary', 'Origin');
+}
+
+function allowedCorsOrigins() {
+  const origins = new Set(['capacitor://localhost', 'http://127.0.0.1:3000', 'http://localhost', 'https://localhost']);
+  addOrigin(origins, APP_URL);
+  for (const origin of String(process.env.APP_ALLOWED_ORIGINS || '').split(',')) {
+    addOrigin(origins, origin);
+  }
+  return origins;
+}
+
+function addOrigin(origins, value) {
+  const raw = String(value || '').trim();
+  if (!raw) return;
+  try {
+    origins.add(new URL(raw).origin);
+  } catch {
+    origins.add(raw.replace(/\/$/, ''));
+  }
 }
 
 function createFileSessionStore() {
@@ -420,5 +470,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     deleteAuthUserByEmail: createSupabaseAuthDeleteService()
   });
   const server = await app.listen(APP_PORT);
-  console.log(`ApecGlobal Manager running at http://localhost:${server.address().port}`);
+  console.log(`ApecGlobal Manager running at http://127.0.0.1:${server.address().port}`);
 }

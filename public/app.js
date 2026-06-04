@@ -36,6 +36,7 @@ const state = {
 const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
 const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
+const runtimeConfig = window.APECGLOBAL_CONFIG || {};
 
 const $ = selector => document.querySelector(selector);
 const loginView = $('#loginView');
@@ -276,8 +277,9 @@ function syncSidebarState() {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...options,
+    credentials: 'include',
     headers: { 'content-type': 'application/json', ...(options.headers || {}) }
   });
   if (!res.ok) {
@@ -285,6 +287,12 @@ async function api(path, options = {}) {
     throw new Error(error.error || 'Request failed');
   }
   return res.headers.get('content-type')?.includes('application/json') ? res.json() : res.text();
+}
+
+function apiUrl(path) {
+  const apiBaseUrl = String(runtimeConfig.apiBaseUrl || '').trim().replace(/\/$/, '');
+  if (!apiBaseUrl || /^https?:\/\//i.test(path)) return path;
+  return `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 async function checkSession() {

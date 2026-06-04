@@ -1,0 +1,8 @@
+{
+  "appId": "com.apecglobal.manager",
+  "appName": "ApecGlobal Manager",
+  "webDir": "public",
+  "android": {
+    "scheme": "https"
+  }
+}

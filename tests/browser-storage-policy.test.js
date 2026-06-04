@@ -31,6 +31,24 @@ test('frontend data CRUD goes through API endpoints instead of direct Supabase t
   assert.match(app, /api\(`\/api\/entries\/\$\{id\}`,\s*\{\s*method:\s*'DELETE'/);
 });
 
+test('frontend supports a configured API origin for Capacitor runtime', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const supabaseClient = readFileSync('public/supabase-client.js', 'utf8');
+  const staticConfig = readFileSync('public/config.js', 'utf8');
+  const serverConfig = readFileSync('src/config.js', 'utf8');
+
+  assert.match(serverConfig, /function resolvePublicApiBaseUrl/);
+  assert.match(serverConfig, /process\.env\.APP_ALLOWED_ORIGINS/);
+  assert.doesNotMatch(serverConfig, /NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/);
+  assert.match(staticConfig, /window\.APECGLOBAL_CONFIG/);
+  assert.match(staticConfig, /apiBaseUrl/);
+  assert.match(app, /const runtimeConfig = window\.APECGLOBAL_CONFIG \|\| \{\}/);
+  assert.match(app, /function apiUrl\(path\)/);
+  assert.match(app, /fetch\(apiUrl\(path\),/);
+  assert.match(supabaseClient, /function runtimeUrl\(path\)/);
+  assert.match(supabaseClient, /script\.src = runtimeUrl\('\/vendor\/supabase\.js'\)/);
+});
+
 test('user management UI exposes pending Google access requests for admin approval', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');

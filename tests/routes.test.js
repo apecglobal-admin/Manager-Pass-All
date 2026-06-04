@@ -134,6 +134,92 @@ test('password login uses Supabase Auth and creates app session', async () => {
   }
 });
 
+test('server allows Capacitor Android WebView origin for API requests', async () => {
+  const app = createApp({ repos: createMemoryRepos() });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const response = await fetch(`${base}/api/session`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://localhost',
+        'access-control-request-method': 'GET'
+      }
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://localhost');
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+    assert.match(response.headers.get('access-control-allow-methods'), /GET/);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Capacitor origin login receives a cross-site compatible session cookie', async () => {
+  const app = createApp({
+    repos: createMemoryRepos(),
+    authenticateWithPassword: async () => ({
+      email: 'admin@example.com',
+      authUserId: 'auth-admin',
+      accessToken: 'token-admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const response = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        origin: 'https://localhost',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+    });
+
+    const cookie = response.headers.get('set-cookie');
+    assert.equal(response.status, 200);
+    assert.match(cookie, /SameSite=None/);
+    assert.match(cookie, /Secure/);
+  } finally {
+    await app.close();
+  }
+});
+
+test('127.0.0.1 local origin login keeps a same-site development cookie', async () => {
+  const app = createApp({
+    repos: createMemoryRepos(),
+    authenticateWithPassword: async () => ({
+      email: 'admin@example.com',
+      authUserId: 'auth-admin',
+      accessToken: 'token-admin'
+    })
+  });
+  const server = await app.listen(0);
+  const port = server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    const response = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        origin: `http://127.0.0.1:${port}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+    });
+
+    const cookie = response.headers.get('set-cookie');
+    assert.equal(response.status, 200);
+    assert.match(cookie, /SameSite=Lax/);
+    assert.doesNotMatch(cookie, /Secure/);
+  } finally {
+    await app.close();
+  }
+});
+
 test('admin can delete an unused entry type but not one used by entries', async () => {
   const app = createApp({
     repos: createMemoryRepos({
@@ -630,6 +716,56 @@ test('signed session cookie survives app restart', async () => {
   }
 
   const restarted = createApp({ repos, verifyGoogleAccessToken: null });
+  const restartedServer = await restarted.listen(0);
+  const restartedBase = `http://127.0.0.1:${restartedServer.address().port}`;
+
+  try {
+    const session = await fetch(`${restartedBase}/api/session`, { headers: { cookie } });
+    const body = await session.json();
+
+    assert.equal(session.status, 200);
+    assert.equal(body.authenticated, true);
+    assert.equal(body.user.username, 'admin@example.com');
+  } finally {
+    await restarted.close();
+  }
+});
+
+test('stateless session cookie survives serverless handler restart', async () => {
+  const repos = createMemoryRepos();
+  const authenticateWithPassword = async () => ({
+    email: 'admin@example.com',
+    authUserId: 'auth-admin',
+    accessToken: 'token-admin'
+  });
+  const first = createApp({
+    repos,
+    authenticateWithPassword,
+    statelessSessions: true,
+    sessionStore: null
+  });
+  const firstServer = await first.listen(0);
+  const firstBase = `http://127.0.0.1:${firstServer.address().port}`;
+  let cookie;
+
+  try {
+    const login = await fetch(`${firstBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+    });
+    cookie = login.headers.get('set-cookie').split(';')[0];
+    assert.equal(login.status, 200);
+  } finally {
+    await first.close();
+  }
+
+  const restarted = createApp({
+    repos,
+    authenticateWithPassword,
+    statelessSessions: true,
+    sessionStore: null
+  });
   const restartedServer = await restarted.listen(0);
   const restartedBase = `http://127.0.0.1:${restartedServer.address().port}`;
 
