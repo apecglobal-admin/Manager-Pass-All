@@ -877,20 +877,24 @@ test('current user theme preferences persist in session', async () => {
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({
         theme: 'mix',
-        mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+        mixTheme: { accent: '#22c55e', accent2: '#ef4444' },
+        panelLayout: { sidebarWidth: 312, detailPanelWidth: 444 }
       })
     });
     assert.equal(saved.status, 200);
     const savedBody = await saved.json();
     assert.deepEqual(savedBody.preferences, {
       theme: 'mix',
-      mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+      mixTheme: { accent: '#22c55e', accent2: '#ef4444' },
+      panelLayout: { sidebarWidth: 312, detailPanelWidth: 444 }
     });
 
     const session = await fetch(`${base}/api/session`, { headers: { cookie } });
     const sessionBody = await session.json();
     assert.equal(sessionBody.user.preferences.theme, 'mix');
     assert.equal(sessionBody.user.preferences.mixTheme.accent, '#22c55e');
+    assert.equal(sessionBody.user.preferences.panelLayout.sidebarWidth, 312);
+    assert.equal(sessionBody.user.preferences.panelLayout.detailPanelWidth, 444);
   } finally {
     await app.close();
   }

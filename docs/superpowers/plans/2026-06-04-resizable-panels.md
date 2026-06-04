@@ -4,7 +4,7 @@
 
 **Goal:** Add desktop mouse resizing for the project sidebar and the account/detail split.
 
-**Architecture:** Keep the current fixed sidebar and content grid. Add two resize handles in the existing HTML, drive panel widths from JavaScript state, and expose the active values through CSS custom properties on `#appView`.
+**Architecture:** Keep the current fixed sidebar and content grid. Add two resize handles in the existing HTML, drive panel widths from JavaScript state, expose the active values through CSS custom properties on `#appView`, and persist final drag widths through `preferences.panelLayout`.
 
 **Tech Stack:** Plain HTML, CSS, browser JavaScript, Node `node:test` static tests.
 
@@ -64,14 +64,11 @@ Inside `<section class="content-body">`, between `.grid-area` and `#detailAside`
 
 - [ ] **Step 1: Add state and constants**
 
-Add state keys `sidebarWidth` and `detailPanelWidth`. Add constants:
+Add state keys `sidebarWidth`, `detailPanelWidth`, and `panelLayoutPreferenceTimer`. Add constants:
 
 ```js
-const SIDEBAR_MIN_WIDTH = 220;
-const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_COLLAPSED_WIDTH = 56;
-const DETAIL_MIN_WIDTH = 320;
-const DETAIL_MAX_WIDTH = 720;
+const PANEL_MIN_WIDTH = 10;
 ```
 
 - [ ] **Step 2: Bind handlers**
@@ -88,12 +85,15 @@ function clampNumber(value, min, max) {
 }
 
 function maxDetailWidth() {
-  return Math.min(DETAIL_MAX_WIDTH, Math.floor(window.innerWidth * 0.6));
+  const sidebarWidth = state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth;
+  return Math.max(PANEL_MIN_WIDTH, Math.floor(window.innerWidth - sidebarWidth - PANEL_MIN_WIDTH));
 }
 
 function updatePanelWidths() {
+  state.sidebarWidth = clampNumber(state.sidebarWidth, PANEL_MIN_WIDTH, maxSidebarWidth());
+  state.detailPanelWidth = clampNumber(state.detailPanelWidth, PANEL_MIN_WIDTH, maxDetailWidth());
   appView?.style.setProperty('--project-sidebar-width', `${state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth}px`);
-  appView?.style.setProperty('--detail-panel-width', `${clampNumber(state.detailPanelWidth, DETAIL_MIN_WIDTH, maxDetailWidth())}px`);
+  appView?.style.setProperty('--detail-panel-width', `${state.detailPanelWidth}px`);
 }
 ```
 
@@ -136,7 +136,7 @@ When detail is open, set:
 
 ```css
 .content-body:has(.detail-aside.open) {
-  grid-template-columns: minmax(260px, 1fr) var(--detail-panel-width);
+  grid-template-columns: minmax(10px, 1fr) var(--detail-panel-width);
 }
 ```
 
@@ -146,7 +146,38 @@ Show `.detail-resize-handle` only when detail is open.
 
 In the existing `@media (max-width: 820px)`, hide `.panel-resize-handle` and keep content margins/detail slide-over as currently defined.
 
-### Task 5: Verify And Commit
+### Task 5: Persist Panel Layout Per User
+
+**Files:**
+- Modify: `public/app.js`
+- Modify: `src/supabase-repositories.js`
+- Test: `tests/browser-storage-policy.test.js`
+- Test: `tests/routes.test.js`
+- Test: `tests/supabase-repositories.test.js`
+
+- [ ] **Step 1: Save frontend layout preferences after resize**
+
+Add `currentPanelLayoutPreferences()`, `schedulePanelLayoutPreferenceSave()`, and `savePanelLayoutPreferences()`. `startPanelResize()` should call `schedulePanelLayoutPreferenceSave()` only when pointer movement occurred and the drag ends.
+
+- [ ] **Step 2: Apply saved layout on login/session**
+
+Extend `applyUserThemePreferences()` to call `applyUserPanelLayoutPreferences(preferences)`. Clamp saved values against the current viewport before setting CSS variables.
+
+- [ ] **Step 3: Whitelist panel layout on the server**
+
+Extend `sanitizeUserPreferences()` so `panelLayout.sidebarWidth` and `panelLayout.detailPanelWidth` are numeric, rounded, and clamped to at least `10`.
+
+- [ ] **Step 4: Verify persistence tests**
+
+Run:
+
+```bash
+node --test tests/browser-storage-policy.test.js tests/routes.test.js tests/supabase-repositories.test.js
+```
+
+Expected: PASS.
+
+### Task 6: Verify And Commit
 
 **Files:**
 - Test: `tests/browser-storage-policy.test.js`

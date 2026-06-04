@@ -479,6 +479,12 @@ test('dashboard panels expose desktop mouse resize controls without browser stor
   assert.match(app, /pointermove/);
   assert.match(app, /pointerup/);
   assert.match(app, /sidebarHandle\.disabled = state\.sidebarCollapsed/);
+  assert.match(app, /function applyUserPanelLayoutPreferences/);
+  assert.match(app, /function currentPanelLayoutPreferences/);
+  assert.match(app, /function savePanelLayoutPreferences/);
+  assert.match(app, /panelLayout:\s*\{/);
+  assert.match(app, /api\('\/api\/me\/preferences'/);
+  assert.match(app, /schedulePanelLayoutPreferenceSave\(\)/);
 
   assert.match(css, /--project-sidebar-width:\s*clamp\(220px, 20vw, 320px\)/);
   assert.match(css, /--project-sidebar-collapsed-width:\s*56px/);

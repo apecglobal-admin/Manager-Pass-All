@@ -29,6 +29,7 @@ const state = {
     accent2: '#f59e0b'
   },
   themePreferenceTimer: null,
+  panelLayoutPreferenceTimer: null,
   sidebarCollapsed: false,
   sidebarWidth: 280,
   detailPanelWidth: 520,
@@ -178,6 +179,7 @@ function applyUserThemePreferences(user = state.currentUser) {
   if (isHexColor(mixTheme.accent2)) state.uiThemeColors.accent2 = mixTheme.accent2.toLowerCase();
   syncMixThemeInputs();
   setTheme(THEME_MODES.has(preferences.theme) ? preferences.theme : state.uiTheme, { silent: true });
+  applyUserPanelLayoutPreferences(preferences);
 }
 
 function currentThemePreferences() {
@@ -204,10 +206,68 @@ async function saveThemePreferences() {
       method: 'PATCH',
       body: JSON.stringify(preferences)
     });
-    state.currentUser = result.user || { ...state.currentUser, preferences };
+    mergeCurrentUserPreferences(result, preferences);
   } catch (error) {
     toast(error.message);
   }
+}
+
+function applyUserPanelLayoutPreferences(preferences = state.currentUser?.preferences || {}) {
+  const panelLayout = preferences.panelLayout && typeof preferences.panelLayout === 'object' ? preferences.panelLayout : {};
+  const sidebarWidth = panelWidthPreference(panelLayout.sidebarWidth, maxSidebarWidth());
+  if (sidebarWidth) state.sidebarWidth = sidebarWidth;
+  const detailPanelWidth = panelWidthPreference(panelLayout.detailPanelWidth, maxDetailWidth());
+  if (detailPanelWidth) state.detailPanelWidth = detailPanelWidth;
+  updatePanelWidths();
+}
+
+function panelWidthPreference(value, max) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) return null;
+  return clampNumber(Math.round(width), PANEL_MIN_WIDTH, max);
+}
+
+function currentPanelLayoutPreferences() {
+  return {
+    panelLayout: {
+      sidebarWidth: Math.round(state.sidebarWidth),
+      detailPanelWidth: Math.round(state.detailPanelWidth)
+    }
+  };
+}
+
+function schedulePanelLayoutPreferenceSave() {
+  if (!state.currentUser) return;
+  clearTimeout(state.panelLayoutPreferenceTimer);
+  state.panelLayoutPreferenceTimer = setTimeout(savePanelLayoutPreferences, 200);
+}
+
+async function savePanelLayoutPreferences() {
+  if (!state.currentUser) return;
+  const preferences = currentPanelLayoutPreferences();
+  try {
+    const result = await api('/api/me/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(preferences)
+    });
+    mergeCurrentUserPreferences(result, preferences);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function mergeCurrentUserPreferences(result, preferences) {
+  if (result.user) {
+    state.currentUser = result.user;
+    return;
+  }
+  state.currentUser = {
+    ...state.currentUser,
+    preferences: {
+      ...(state.currentUser?.preferences || {}),
+      ...preferences
+    }
+  };
 }
 
 function syncMixThemeInputs() {
@@ -315,9 +375,11 @@ function bindPanelResizeActions() {
 function startPanelResize(event, onMove) {
   event.preventDefault();
   appView?.classList.add('panel-resizing');
+  let didResize = false;
 
   const handleMove = nextEvent => {
     nextEvent.preventDefault();
+    didResize = true;
     onMove(nextEvent);
   };
 
@@ -326,6 +388,7 @@ function startPanelResize(event, onMove) {
     document.removeEventListener('pointermove', handleMove);
     document.removeEventListener('pointerup', stopResize);
     document.removeEventListener('pointercancel', stopResize);
+    if (didResize) schedulePanelLayoutPreferenceSave();
   };
 
   document.addEventListener('pointermove', handleMove);

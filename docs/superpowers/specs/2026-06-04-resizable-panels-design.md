@@ -52,7 +52,18 @@ The existing sidebar toggle continues to collapse the project area to `56px`. Wh
 
 ## Persistence
 
-Panel widths are stored in JavaScript state only for the current app session. This avoids using browser storage and keeps the feature separate from user preference persistence. Server-side preference persistence can be added later if needed.
+Panel widths are stored per user through the existing `/api/me/preferences` endpoint. The frontend keeps the active widths in JavaScript state while the user is working, then saves `preferences.panelLayout` when a resize drag finishes:
+
+```json
+{
+  "panelLayout": {
+    "sidebarWidth": 280,
+    "detailPanelWidth": 520
+  }
+}
+```
+
+When the user logs in or refreshes the app, `state.currentUser.preferences.panelLayout` is applied before rendering the dashboard widths. Browser storage remains unused.
 
 ## Mobile Behavior
 
@@ -71,5 +82,6 @@ Static tests should cover:
 - JavaScript defines resize state, min/max constraints, pointer event handlers, and CSS variable updates.
 - Sidebar collapse disables sidebar resizing and preserves expanded width.
 - CSS uses custom properties for sidebar and detail widths.
+- Panel widths persist through `preferences.panelLayout` for the current user.
 - Mobile media query hides resize handles and preserves the current mobile layout.
 - Browser storage policy remains unchanged: no `localStorage`, `sessionStorage`, or cookies for panel widths.

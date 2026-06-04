@@ -122,11 +122,13 @@ test('updates Supabase user theme preferences', async () => {
 
   const user = await repos.users.updatePreferences('user-theme', {
     theme: 'mix',
-    mixTheme: { accent: '#22c55e', accent2: '#ef4444' }
+    mixTheme: { accent: '#22c55e', accent2: '#ef4444' },
+    panelLayout: { sidebarWidth: 2, detailPanelWidth: 640 }
   });
 
   assert.equal(user.preferences.theme, 'mix');
   assert.equal(user.preferences.mixTheme.accent, '#22c55e');
+  assert.deepEqual(user.preferences.panelLayout, { sidebarWidth: 10, detailPanelWidth: 640 });
   assert.deepEqual(rows.app_users[0].preferences, user.preferences);
 });
 
