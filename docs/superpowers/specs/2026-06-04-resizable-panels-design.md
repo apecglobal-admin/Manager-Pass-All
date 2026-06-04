@@ -32,12 +32,15 @@ There are two desktop resize handles:
 - `sidebarResizeHandle`: positioned on the right edge of the project sidebar.
 - `detailResizeHandle`: positioned between the account list and detail panel.
 
-Dragging the sidebar handle changes `--project-sidebar-width`. Dragging the detail handle changes `--detail-panel-width`. Both values are clamped so the interface stays usable.
+Dragging the sidebar handle changes `--project-sidebar-width`. Dragging the detail handle changes `--detail-panel-width`. Both values are clamped dynamically from the viewport so no panel uses a fixed maximum.
 
-Recommended constraints:
+Panel constraints:
 
-- Project sidebar: minimum `220px`, maximum `420px`, default `clamp(220px, 20vw, 320px)`.
-- Detail panel: minimum `320px`, maximum `min(720px, 60vw)`, default `min(520px, 42vw)`.
+- Every visible panel can shrink to `10px`.
+- Sidebar maximum is `viewport width - account minimum 10px - detail minimum 10px`.
+- Detail maximum is `viewport width - current sidebar width - account minimum 10px`.
+- Account list width is the remaining content space between sidebar and detail.
+- Defaults remain comfortable for first load: sidebar `clamp(220px, 20vw, 320px)`, detail `min(520px, 42vw)`.
 
 ## Collapse Behavior
 

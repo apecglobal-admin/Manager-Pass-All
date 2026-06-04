@@ -38,12 +38,8 @@ const state = {
 const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
 const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
-const SIDEBAR_MIN_WIDTH = 220;
-const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_COLLAPSED_WIDTH = 56;
-const DETAIL_MIN_WIDTH = 320;
-const DETAIL_MAX_WIDTH = 720;
-const DETAIL_LIST_MIN_WIDTH = 280;
+const PANEL_MIN_WIDTH = 10;
 const runtimeConfig = window.APECGLOBAL_CONFIG || {};
 
 const $ = selector => document.querySelector(selector);
@@ -280,15 +276,18 @@ function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function maxSidebarWidth() {
+  return Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH);
+}
+
 function maxDetailWidth() {
   const sidebarWidth = state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth;
-  const availableWidth = Math.max(DETAIL_MIN_WIDTH, window.innerWidth - sidebarWidth - DETAIL_LIST_MIN_WIDTH);
-  return Math.max(DETAIL_MIN_WIDTH, Math.min(DETAIL_MAX_WIDTH, Math.floor(availableWidth)));
+  return Math.max(PANEL_MIN_WIDTH, Math.floor(window.innerWidth - sidebarWidth - PANEL_MIN_WIDTH));
 }
 
 function updatePanelWidths() {
-  state.sidebarWidth = clampNumber(state.sidebarWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
-  state.detailPanelWidth = clampNumber(state.detailPanelWidth, DETAIL_MIN_WIDTH, maxDetailWidth());
+  state.sidebarWidth = clampNumber(state.sidebarWidth, PANEL_MIN_WIDTH, maxSidebarWidth());
+  state.detailPanelWidth = clampNumber(state.detailPanelWidth, PANEL_MIN_WIDTH, maxDetailWidth());
   appView?.style.setProperty('--project-sidebar-width', `${state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth}px`);
   appView?.style.setProperty('--detail-panel-width', `${state.detailPanelWidth}px`);
 }
@@ -300,14 +299,14 @@ function bindPanelResizeActions() {
   sidebarHandle?.addEventListener('pointerdown', event => {
     if (state.sidebarCollapsed) return;
     startPanelResize(event, nextEvent => {
-      state.sidebarWidth = clampNumber(nextEvent.clientX, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      state.sidebarWidth = clampNumber(nextEvent.clientX, PANEL_MIN_WIDTH, maxSidebarWidth());
       updatePanelWidths();
     });
   });
 
   detailHandle?.addEventListener('pointerdown', event => {
     startPanelResize(event, nextEvent => {
-      state.detailPanelWidth = clampNumber(window.innerWidth - nextEvent.clientX, DETAIL_MIN_WIDTH, maxDetailWidth());
+      state.detailPanelWidth = clampNumber(window.innerWidth - nextEvent.clientX, PANEL_MIN_WIDTH, maxDetailWidth());
       updatePanelWidths();
     });
   });

@@ -464,9 +464,13 @@ test('dashboard panels expose desktop mouse resize controls without browser stor
 
   assert.match(app, /sidebarWidth:\s*280/);
   assert.match(app, /detailPanelWidth:\s*520/);
-  assert.match(app, /const SIDEBAR_MIN_WIDTH\s*=\s*220/);
-  assert.match(app, /const SIDEBAR_MAX_WIDTH\s*=\s*420/);
-  assert.match(app, /const DETAIL_MIN_WIDTH\s*=\s*320/);
+  assert.match(app, /const PANEL_MIN_WIDTH\s*=\s*10/);
+  assert.doesNotMatch(app, /const SIDEBAR_MAX_WIDTH/);
+  assert.doesNotMatch(app, /const DETAIL_MAX_WIDTH/);
+  assert.match(app, /function maxSidebarWidth\(\)/);
+  assert.match(app, /function maxDetailWidth\(\)/);
+  assert.match(app, /window\.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH/);
+  assert.match(app, /window\.innerWidth - sidebarWidth - PANEL_MIN_WIDTH/);
   assert.match(app, /function bindPanelResizeActions\(\)/);
   assert.match(app, /function updatePanelWidths\(\)/);
   assert.match(app, /--project-sidebar-width/);
@@ -482,7 +486,7 @@ test('dashboard panels expose desktop mouse resize controls without browser stor
   assert.match(css, /\.panel-resize-handle/);
   assert.match(css, /\.sidebar-resize-handle/);
   assert.match(css, /\.detail-resize-handle/);
-  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*minmax\(260px, 1fr\) var\(--detail-panel-width\)/);
+  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*minmax\(10px, 1fr\) var\(--detail-panel-width\)/);
   assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.panel-resize-handle\s*\{\s*display:\s*none/);
 });
 test('project member UI keeps Supabase UUID identifiers as strings', () => {
