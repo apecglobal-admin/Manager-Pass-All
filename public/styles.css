@@ -258,6 +258,9 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 
 /* App */
 .app {
+  --project-sidebar-width: clamp(220px, 20vw, 320px);
+  --project-sidebar-collapsed-width: 56px;
+  --detail-panel-width: min(520px, 42vw);
   min-height: 100vh;
   display: block;
   padding-top: 52px;
@@ -452,7 +455,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   top: 52px;
   bottom: 0;
   left: 0;
-  width: clamp(220px, 20vw, 320px);
+  width: var(--project-sidebar-width);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -464,6 +467,44 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   overflow: hidden;
   z-index: 18;
   transition: width var(--ease), padding var(--ease);
+}
+.panel-resize-handle {
+  position: absolute;
+  z-index: 22;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: background var(--ease), box-shadow var(--ease);
+}
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.app.panel-resizing .panel-resize-handle::after {
+  background: var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.panel-resize-handle:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.sidebar-resize-handle {
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 10px;
 }
 .sidebar-head {
   display: flex;
@@ -683,7 +724,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 }
 
 .content-header {
-  margin-left: clamp(220px, 20vw, 320px);
+  margin-left: var(--project-sidebar-width);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -699,7 +740,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .filter.active { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: 0; }
 
 .content-body {
-  margin-left: clamp(220px, 20vw, 320px);
+  margin-left: var(--project-sidebar-width);
   display: grid;
   grid-template-columns: 1fr;
   min-height: calc(100vh - 111px);
@@ -709,7 +750,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .content-header,
 .content-body { transition: margin-left var(--ease); }
 .app.sidebar-collapsed .project-strip {
-  width: 56px;
+  width: var(--project-sidebar-collapsed-width);
   padding: 10px;
 }
 .app.sidebar-collapsed .sidebar-head { justify-content: center; }
@@ -721,8 +762,17 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 }
 .app.sidebar-collapsed .sidebar-toggle-icon { transform: rotate(180deg); }
 .app.sidebar-collapsed .content-header,
-.app.sidebar-collapsed .content-body { margin-left: 56px; }
-.content-body:has(.detail-aside.open) { grid-template-columns: minmax(260px, 30%) minmax(0, 70%); }
+.app.sidebar-collapsed .content-body { margin-left: var(--project-sidebar-collapsed-width); }
+.content-body:has(.detail-aside.open) { grid-template-columns: minmax(10px, 1fr) var(--detail-panel-width); }
+.detail-resize-handle {
+  display: none;
+  top: 0;
+  bottom: 0;
+  right: var(--detail-panel-width);
+  width: 10px;
+  transform: translateX(5px);
+}
+.content-body:has(.detail-aside.open) .detail-resize-handle { display: block; }
 .content-body:has(.detail-aside.open) .entry-grid { grid-template-columns: 1fr; }
 .content-body:has(.detail-aside.open) .entry-card {
   min-height: 64px;
@@ -758,7 +808,61 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   margin-top: 0;
 }
 .grid-area { min-height: 0; overflow-y: auto; padding: 14px; }
-.entry-grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 12px; }
+.system-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+.system-add-btn {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.system-section-list {
+  display: grid;
+  gap: 12px;
+}
+.system-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-sm);
+  background: rgba(15, 23, 42, .28);
+}
+.system-section.active {
+  border-color: rgba(124, 58, 237, .45);
+  background: linear-gradient(160deg, rgba(124, 58, 237, .12), rgba(20, 184, 166, .04));
+}
+.system-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.system-section-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.system-section-title strong,
+.system-section-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.system-section-title strong { color: var(--text); font-size: 15px; }
+.system-section-title small { color: var(--text3); font-size: 12px; }
+.system-section-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+.entry-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .entry-card {
   min-height: 100px;
   display: flex;
@@ -959,8 +1063,8 @@ label,
 .section-label { font-size: 12px; }
 
 @media (max-width: 1100px) {
-  .content-body:has(.detail-aside.open) { grid-template-columns: minmax(240px, 35%) minmax(0, 65%); }
-  .entry-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+  .content-body:has(.detail-aside.open) { grid-template-columns: minmax(10px, 1fr) var(--detail-panel-width); }
+  .entry-grid { grid-template-columns: 1fr; }
   #importBtn,
   #exportCsvBtn { display: none; }
 }
@@ -1007,6 +1111,7 @@ label,
   .content-body { margin-left: 0; }
   .app.sidebar-collapsed .content-header,
   .app.sidebar-collapsed .content-body { margin-left: 0; }
+  .panel-resize-handle { display: none; }
   .content-body:has(.detail-aside.open) { grid-template-columns: 1fr; }
   .detail-aside.open { position: fixed; inset: 0 0 0 auto; width: min(380px, 90vw); z-index: 30; box-shadow: var(--shadow-lg); }
   .grid-2,

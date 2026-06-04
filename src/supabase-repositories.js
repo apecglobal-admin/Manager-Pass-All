@@ -828,12 +828,26 @@ function sanitizeUserPreferences(preferences = {}) {
     if (accent) output.mixTheme.accent = accent;
     if (accent2) output.mixTheme.accent2 = accent2;
   }
+  const panelLayout = input.panelLayout && typeof input.panelLayout === 'object' ? input.panelLayout : {};
+  const sidebarWidth = normalizePanelWidth(panelLayout.sidebarWidth);
+  const detailPanelWidth = normalizePanelWidth(panelLayout.detailPanelWidth);
+  if (sidebarWidth || detailPanelWidth) {
+    output.panelLayout = {};
+    if (sidebarWidth) output.panelLayout.sidebarWidth = sidebarWidth;
+    if (detailPanelWidth) output.panelLayout.detailPanelWidth = detailPanelWidth;
+  }
   return output;
 }
 
 function normalizeHexColor(value) {
   const color = String(value || '').trim().toLowerCase();
   return /^#[0-9a-f]{6}$/.test(color) ? color : '';
+}
+
+function normalizePanelWidth(value) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) return 0;
+  return Math.max(10, Math.round(width));
 }
 
 function mapProjectSystem(row) {

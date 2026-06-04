@@ -29,13 +29,18 @@ const state = {
     accent2: '#f59e0b'
   },
   themePreferenceTimer: null,
+  panelLayoutPreferenceTimer: null,
   sidebarCollapsed: false,
+  sidebarWidth: 280,
+  detailPanelWidth: 520,
   expandedProjectIds: new Set()
 };
 
 const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
 const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
+const SIDEBAR_COLLAPSED_WIDTH = 56;
+const PANEL_MIN_WIDTH = 10;
 const runtimeConfig = window.APECGLOBAL_CONFIG || {};
 
 const $ = selector => document.querySelector(selector);
@@ -98,6 +103,7 @@ function bindEvents() {
       closeMixColorPopover();
     }
   });
+  bindPanelResizeActions();
   syncSidebarState();
 }
 
@@ -173,6 +179,7 @@ function applyUserThemePreferences(user = state.currentUser) {
   if (isHexColor(mixTheme.accent2)) state.uiThemeColors.accent2 = mixTheme.accent2.toLowerCase();
   syncMixThemeInputs();
   setTheme(THEME_MODES.has(preferences.theme) ? preferences.theme : state.uiTheme, { silent: true });
+  applyUserPanelLayoutPreferences(preferences);
 }
 
 function currentThemePreferences() {
@@ -199,10 +206,68 @@ async function saveThemePreferences() {
       method: 'PATCH',
       body: JSON.stringify(preferences)
     });
-    state.currentUser = result.user || { ...state.currentUser, preferences };
+    mergeCurrentUserPreferences(result, preferences);
   } catch (error) {
     toast(error.message);
   }
+}
+
+function applyUserPanelLayoutPreferences(preferences = state.currentUser?.preferences || {}) {
+  const panelLayout = preferences.panelLayout && typeof preferences.panelLayout === 'object' ? preferences.panelLayout : {};
+  const sidebarWidth = panelWidthPreference(panelLayout.sidebarWidth, maxSidebarWidth());
+  if (sidebarWidth) state.sidebarWidth = sidebarWidth;
+  const detailPanelWidth = panelWidthPreference(panelLayout.detailPanelWidth, maxDetailWidth());
+  if (detailPanelWidth) state.detailPanelWidth = detailPanelWidth;
+  updatePanelWidths();
+}
+
+function panelWidthPreference(value, max) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) return null;
+  return clampNumber(Math.round(width), PANEL_MIN_WIDTH, max);
+}
+
+function currentPanelLayoutPreferences() {
+  return {
+    panelLayout: {
+      sidebarWidth: Math.round(state.sidebarWidth),
+      detailPanelWidth: Math.round(state.detailPanelWidth)
+    }
+  };
+}
+
+function schedulePanelLayoutPreferenceSave() {
+  if (!state.currentUser) return;
+  clearTimeout(state.panelLayoutPreferenceTimer);
+  state.panelLayoutPreferenceTimer = setTimeout(savePanelLayoutPreferences, 200);
+}
+
+async function savePanelLayoutPreferences() {
+  if (!state.currentUser) return;
+  const preferences = currentPanelLayoutPreferences();
+  try {
+    const result = await api('/api/me/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(preferences)
+    });
+    mergeCurrentUserPreferences(result, preferences);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function mergeCurrentUserPreferences(result, preferences) {
+  if (result.user) {
+    state.currentUser = result.user;
+    return;
+  }
+  state.currentUser = {
+    ...state.currentUser,
+    preferences: {
+      ...(state.currentUser?.preferences || {}),
+      ...preferences
+    }
+  };
 }
 
 function syncMixThemeInputs() {
@@ -267,8 +332,78 @@ function toggleSidebar() {
   syncSidebarState();
 }
 
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function maxSidebarWidth() {
+  return Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH);
+}
+
+function maxDetailWidth() {
+  const sidebarWidth = state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth;
+  return Math.max(PANEL_MIN_WIDTH, Math.floor(window.innerWidth - sidebarWidth - PANEL_MIN_WIDTH));
+}
+
+function updatePanelWidths() {
+  state.sidebarWidth = clampNumber(state.sidebarWidth, PANEL_MIN_WIDTH, maxSidebarWidth());
+  state.detailPanelWidth = clampNumber(state.detailPanelWidth, PANEL_MIN_WIDTH, maxDetailWidth());
+  appView?.style.setProperty('--project-sidebar-width', `${state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth}px`);
+  appView?.style.setProperty('--detail-panel-width', `${state.detailPanelWidth}px`);
+}
+
+function bindPanelResizeActions() {
+  const sidebarHandle = $('#sidebarResizeHandle');
+  const detailHandle = $('#detailResizeHandle');
+
+  sidebarHandle?.addEventListener('pointerdown', event => {
+    if (state.sidebarCollapsed) return;
+    startPanelResize(event, nextEvent => {
+      state.sidebarWidth = clampNumber(nextEvent.clientX, PANEL_MIN_WIDTH, maxSidebarWidth());
+      updatePanelWidths();
+    });
+  });
+
+  detailHandle?.addEventListener('pointerdown', event => {
+    startPanelResize(event, nextEvent => {
+      state.detailPanelWidth = clampNumber(window.innerWidth - nextEvent.clientX, PANEL_MIN_WIDTH, maxDetailWidth());
+      updatePanelWidths();
+    });
+  });
+}
+
+function startPanelResize(event, onMove) {
+  event.preventDefault();
+  appView?.classList.add('panel-resizing');
+  let didResize = false;
+
+  const handleMove = nextEvent => {
+    nextEvent.preventDefault();
+    didResize = true;
+    onMove(nextEvent);
+  };
+
+  const stopResize = () => {
+    appView?.classList.remove('panel-resizing');
+    document.removeEventListener('pointermove', handleMove);
+    document.removeEventListener('pointerup', stopResize);
+    document.removeEventListener('pointercancel', stopResize);
+    if (didResize) schedulePanelLayoutPreferenceSave();
+  };
+
+  document.addEventListener('pointermove', handleMove);
+  document.addEventListener('pointerup', stopResize, { once: true });
+  document.addEventListener('pointercancel', stopResize, { once: true });
+}
+
 function syncSidebarState() {
   appView?.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+  updatePanelWidths();
+  const sidebarHandle = $('#sidebarResizeHandle');
+  if (sidebarHandle) {
+    sidebarHandle.disabled = state.sidebarCollapsed;
+    sidebarHandle.setAttribute('aria-hidden', String(state.sidebarCollapsed));
+  }
   const button = $('#sidebarToggleBtn');
   if (!button) return;
   button.setAttribute('aria-expanded', String(!state.sidebarCollapsed));
@@ -470,12 +605,8 @@ function renderProjects() {
   const query = $('#projectSearch').value.toLowerCase();
   $('#projectList').innerHTML = state.projects
     .filter(project => project.name.toLowerCase().includes(query))
-    .map(project => {
-      const active = String(project.id) === String(state.selectedProjectId);
-      const expanded = state.expandedProjectIds.has(String(project.id));
-      return `
+    .map(project => `
       <div class="project-chip ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-id="${project.id}" data-drag-project="${project.id}" draggable="${isAdmin() ? 'true' : 'false'}">
-        <button class="project-expand-btn ${expanded ? 'open' : ''}" type="button" title="${expanded ? 'Đóng hệ thống' : 'Mở hệ thống'}" data-toggle-project-systems="${project.id}">${svgIcon('chevron')}</button>
         <span class="chip-avatar">${projectIcon(project.name)}</span>
         <strong>${escapeHtml(project.name)}</strong>
         <span class="chip-actions">
@@ -483,29 +614,14 @@ function renderProjects() {
           ${isAdmin() ? `<button class="chip-btn" type="button" title="Sửa" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
         </span>
       </div>
-      ${expanded ? renderSystemSubmenu(project) : ''}
-    `;
-    }).join('');
+    `).join('');
   document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async () => {
     state.view = 'vault';
     if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
     state.selectedProjectId = item.dataset.id;
-    state.expandedProjectIds.add(String(item.dataset.id));
     state.revealCache.clear();
     renderProjects();
     await loadEntries();
-  }));
-  document.querySelectorAll('[data-toggle-project-systems]').forEach(button => button.addEventListener('click', async event => {
-    event.stopPropagation();
-    const projectId = String(button.dataset.toggleProjectSystems);
-    if (state.expandedProjectIds.has(projectId)) {
-      state.expandedProjectIds.delete(projectId);
-      renderProjects();
-      return;
-    }
-    state.expandedProjectIds.add(projectId);
-    if (!state.projectSystemsByProjectId[projectId]) await loadProjectSystems(projectId);
-    renderProjects();
   }));
   document.querySelectorAll('[data-edit-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
@@ -519,46 +635,7 @@ function renderProjects() {
     event.stopPropagation();
     deleteProject(button.dataset.deleteProject);
   }));
-  document.querySelectorAll('[data-system-filter]').forEach(button => button.addEventListener('click', async event => {
-    event.stopPropagation();
-    const projectId = button.dataset.systemProjectId;
-    if (projectId && String(state.selectedProjectId) !== String(projectId)) {
-      state.selectedProjectId = projectId;
-      state.expandedProjectIds.add(String(projectId));
-      state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || [];
-    }
-    state.selectedSystemId = button.dataset.systemFilter;
-    state.selectedEntryId = null;
-    state.revealCache.clear();
-    if (projectId && String(projectId) !== String(state.selectedProjectId)) return;
-    await loadEntries();
-  }));
-  document.querySelectorAll('[data-edit-system-sidebar]').forEach(button => button.addEventListener('click', async event => {
-    event.stopPropagation();
-    const [projectId, systemId] = String(button.dataset.editSystemSidebar || '').split(':');
-    await activateProjectForSystemAction(projectId);
-    const system = state.projectSystems.find(item => String(item.id) === String(systemId));
-    if (system) openProjectSystemDialog(system);
-  }));
-  document.querySelectorAll('[data-delete-system-sidebar]').forEach(button => button.addEventListener('click', async event => {
-    event.stopPropagation();
-    const [projectId, systemId] = String(button.dataset.deleteSystemSidebar || '').split(':');
-    await activateProjectForSystemAction(projectId);
-    await deleteProjectSystem(systemId);
-  }));
-  document.querySelectorAll('[data-open-system-dialog]').forEach(button => button.addEventListener('click', event => {
-    event.stopPropagation();
-    if (button.dataset.openSystemDialog && String(state.selectedProjectId) !== String(button.dataset.openSystemDialog)) {
-      state.selectedProjectId = button.dataset.openSystemDialog;
-      state.selectedSystemId = null;
-      state.expandedProjectIds.add(String(state.selectedProjectId));
-      loadEntries().then(() => openProjectSystemDialog());
-      return;
-    }
-    openProjectSystemDialog();
-  }));
   bindProjectDragActions();
-  bindSystemDragActions();
   syncBulkActionButtons();
 }
 
@@ -568,29 +645,8 @@ async function activateProjectForSystemAction(projectId) {
     state.selectedProjectId = projectId;
     state.selectedSystemId = null;
     state.selectedEntryId = null;
-    state.expandedProjectIds.add(String(projectId));
   }
   state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || await loadProjectSystems(projectId);
-}
-
-function renderSystemSubmenu(project = currentProject()) {
-  const projectId = String(project?.id || state.selectedProjectId || '');
-  const systems = state.projectSystemsByProjectId[projectId] || (String(projectId) === String(state.selectedProjectId) ? state.projectSystems : []);
-  const systemsHtml = systems.map(system => `
-    <div class="system-chip ${String(projectId) === String(state.selectedProjectId) && String(system.id) === String(state.selectedSystemId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" role="button" tabindex="0" data-system-project-id="${projectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
-      <span class="system-chip-main"><span>${escapeHtml(system.name)}</span><small>${escapeHtml(system.type || 'Web')}</small></span>
-      ${can('users.manage') ? `<span class="system-chip-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system-sidebar="${projectId}:${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system-sidebar="${projectId}:${system.id}">${svgIcon('trash')}</button></span>` : ''}
-    </div>
-  `).join('');
-  const addButton = can('users.manage')
-    ? `<button class="system-chip add-system-inline" type="button" data-open-system-dialog="${projectId}">＋ Thêm hệ thống</button>`
-    : '';
-  return `
-    <div class="system-submenu">
-      ${systemsHtml || '<div class="system-empty">Chưa có hệ thống</div>'}
-      ${addButton}
-    </div>
-  `;
 }
 
 function toggleSetValue(set, value, checked) {
@@ -673,7 +729,7 @@ function bindSystemDragActions() {
       const reordered = moveItemBefore(systems, draggedId, targetId);
       state.projectSystemsByProjectId[String(projectId)] = reordered;
       if (String(projectId) === String(state.selectedProjectId)) state.projectSystems = reordered;
-      renderProjects();
+      renderEntries();
       await persistSystemOrder(projectId);
     });
   });
@@ -713,7 +769,7 @@ async function persistSystemOrder(projectId) {
   } catch (error) {
     toast(error.message);
     await loadProjectSystems(projectId);
-    renderProjects();
+    renderEntries();
   }
 }
 
@@ -891,7 +947,11 @@ function entryMatchesSelectedType(entry) {
 
 function entryMatchesSelectedSystem(entry) {
   if (!state.selectedSystemId) return false;
-  return String(entry.systemId || entry.projectSystemId || '') === String(state.selectedSystemId);
+  return entryMatchesSystem(entry, state.selectedSystemId);
+}
+
+function entryMatchesSystem(entry, systemId) {
+  return String(entry.systemId || entry.projectSystemId || '') === String(systemId);
 }
 
 function visibleEntries(rows = state.entries) {
@@ -902,28 +962,70 @@ function renderEntries(rows = state.entries) {
   const filtered = visibleEntries(rows);
   const emptyState = $('#emptyState');
   emptyState.innerHTML = emptyEntryHtml(filtered, rows);
-  emptyState.classList.toggle('hidden', filtered.length > 0);
-  $('#entryList').innerHTML = filtered.map(entry => {
-    const sub = entryListSubtitle(entry);
-    const system = systemForEntry(entry);
-    const badge = system ? `${system.name} · ${system.type || 'System'}` : (entry.type || 'Account');
-    return `
-    <article class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" role="button" tabindex="0" data-select="${entry.id}">
-      ${entry.permissions?.canDelete && state.bulkEntryMode ? `<input class="bulk-check entry-check" type="checkbox" data-select-entry="${entry.id}" ${state.selectedEntryIds.has(String(entry.id)) ? 'checked' : ''} aria-label="Chọn account ${escapeAttr(entry.name)}">` : ''}
-      <div class="card-head">
-        <span class="entry-icon">${svgIcon(iconNameForType(system?.type || entry.type))}</span>
-        <span class="type-badge">${escapeHtml(badge)}</span>
-      </div>
-      <strong class="card-name">${escapeHtml(entry.name)}</strong>
-      <small class="card-sub">${escapeHtml(sub)}</small>
-    </article>
-  `}).join('');
+  const hasSystemColumn = Boolean(currentProject() && state.projectSystems.length);
+  emptyState.classList.toggle('hidden', hasSystemColumn || filtered.length > 0);
+  $('#entryList').innerHTML = hasSystemColumn ? renderSystemSections(rows) : '';
   if (!filtered.some(entry => String(entry.id) === String(state.selectedEntryId))) {
     state.selectedEntryId = filtered[0]?.id || null;
   }
   renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
+  bindSystemColumnActions();
   bindRowActions();
+  bindSystemDragActions();
   $('#createFirstSystemBtn')?.addEventListener('click', () => openProjectSystemDialog());
+}
+
+function renderSystemSections(rows = state.entries) {
+  const addButton = can('users.manage')
+    ? '<button class="btn-outline system-add-btn" type="button" data-open-system-dialog>＋ Thêm hệ thống</button>'
+    : '';
+  return `
+    <div class="system-column-head">
+      <span>Hệ thống</span>
+      ${addButton}
+    </div>
+    <div class="system-section-list">
+      ${state.projectSystems.map(system => {
+        const active = String(system.id) === String(state.selectedSystemId);
+        return `
+          <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+            <header class="system-section-head">
+              <div class="system-section-title">
+                <strong>${escapeHtml(system.name)}</strong>
+                <small>${escapeHtml(system.type || 'System')}</small>
+              </div>
+              ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
+            </header>
+          </section>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function bindSystemColumnActions() {
+  document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
+    if (event.target.closest('[data-edit-system], [data-delete-system]')) return;
+    state.selectedSystemId = section.dataset.systemFilter;
+    state.selectedEntryId = visibleEntries()[0]?.id || null;
+    state.revealCache.clear();
+    renderEntries();
+    renderHeader();
+  }));
+  document.querySelectorAll('[data-edit-system]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const system = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystem));
+    if (system) openProjectSystemDialog(system);
+  }));
+  document.querySelectorAll('[data-delete-system]').forEach(button => button.addEventListener('click', async event => {
+    event.stopPropagation();
+    const systemId = button.dataset.deleteSystem;
+    await deleteProjectSystem(systemId);
+  }));
+  document.querySelectorAll('[data-open-system-dialog]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    openProjectSystemDialog();
+  }));
 }
 
 function emptyEntryHtml(filtered, rows) {
@@ -934,7 +1036,7 @@ function emptyEntryHtml(filtered, rows) {
       : '<p>Admin cần tạo hệ thống trước khi thêm account.</p>';
     return `<strong>Chưa có hệ thống trong dự án</strong><p>Tạo Website, CMS, App hoặc API trước, sau đó mới thêm account vào đúng hệ thống.</p>${action}`;
   }
-  if (!filtered.length && rows.length > 0) return '<strong>Không có account phù hợp</strong><p>Thử chọn hệ thống khác trong sidebar.</p>';
+  if (!filtered.length && rows.length > 0) return '<strong>Không có account phù hợp</strong><p>Thử chọn hệ thống khác trong cột Hệ thống.</p>';
   if (state.currentUser?.role !== 'Admin' && !projectTypePermissions().some(permission => permission.canViewEntry)) {
     return '<strong>Chưa có quyền xem account</strong><p>Admin cần cấp quyền theo hệ thống cho bạn.</p>';
   }
@@ -963,8 +1065,11 @@ function entryListSubtitle(entry) {
 
 function bindRowActions() {
   document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', () => {
+    const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
+    state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
     renderEntries();
+    renderHeader();
   }));
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
   document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));

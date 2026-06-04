@@ -372,24 +372,27 @@ test('new accounts are created from the active project system', () => {
   assert.match(openEntryDialog, /form\.systemId\.value = formEntry\.id \? \(formEntry\.systemId \|\| formEntry\.projectSystemId \|\| ''\) : firstCreatableSystemId\(\)/);
 });
 
-test('project sidebar supports independent expandable system submenus', () => {
+test('project sidebar stays project-only while systems render in the middle column', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
-  assert.match(app, /expandedProjectIds: new Set\(\)/);
   assert.match(app, /projectSystemsByProjectId: \{\}/);
   assert.doesNotMatch(html, /id="addSystemBtn"/);
   assert.doesNotMatch(app, /addSystemBtn/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.has\(String\(project\.id\)\)/);
-  assert.match(renderProjects, /data-toggle-project-systems/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\)/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.add\(projectId\)/);
-  assert.match(renderSystemSubmenu, /state\.projectSystemsByProjectId\[projectId\]/);
-  assert.match(renderSystemSubmenu, /data-system-project-id="\$\{projectId\}"/);
-  assert.match(renderSystemSubmenu, /data-edit-system-sidebar/);
-  assert.match(renderSystemSubmenu, /data-delete-system-sidebar/);
+  assert.doesNotMatch(renderProjects, /data-toggle-project-systems|renderSystemSubmenu|project-expand-btn/);
+  assert.doesNotMatch(app, /function renderSystemSubmenu/);
+  assert.doesNotMatch(app, /data-edit-system-sidebar|data-delete-system-sidebar/);
+  assert.match(renderSystemSections, /state\.projectSystems\.map/);
+  assert.match(renderSystemSections, /data-system-filter="\$\{system\.id\}"/);
+  assert.match(renderSystemSections, /data-edit-system="\$\{system\.id\}"/);
+  assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
+  assert.doesNotMatch(renderSystemSections, /renderSystemAccountCards|data-select="\$\{entry\.id\}"/);
+  assert.doesNotMatch(app, /function renderSystemAccountCards/);
+  assert.doesNotMatch(app, /function renderSystemDetail/);
+  assert.match(app, /renderDetail\(filtered\.find\(entry => String\(entry\.id\) === String\(state\.selectedEntryId\)\) \|\| null\)/);
+  assert.match(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
   assert.match(app, /deleteProjectSystem\(systemId\)/);
@@ -399,7 +402,7 @@ test('admin can drag projects and systems to persist custom order', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindProjectDragActions = app.match(/function bindProjectDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindSystemDragActions = app.match(/function bindSystemDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const persistProjectOrder = app.match(/async function persistProjectOrder\(\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -407,7 +410,7 @@ test('admin can drag projects and systems to persist custom order', () => {
 
   assert.match(renderProjects, /draggable="\$\{isAdmin\(\) \? 'true' : 'false'\}"/);
   assert.match(renderProjects, /data-drag-project/);
-  assert.match(renderSystemSubmenu, /data-drag-system/);
+  assert.match(renderSystemSections, /data-drag-system/);
   assert.match(bindProjectDragActions, /text\/project-id/);
   assert.match(bindProjectDragActions, /moveItemBefore\(state\.projects, draggedId, targetId\)/);
   assert.match(bindSystemDragActions, /text\/system-id/);
@@ -424,7 +427,6 @@ test('bulk delete controls are limited to accounts', () => {
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
   const deleteSelectedEntries = app.match(/async function deleteSelectedEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="deleteSelectedProjectsBtn"/);
@@ -441,7 +443,7 @@ test('bulk delete controls are limited to accounts', () => {
   assert.match(app, /bulkEntryMode: false/);
   assert.doesNotMatch(renderProjects, /data-select-project/);
   assert.doesNotMatch(renderSystemSubmenu, /data-select-system/);
-  assert.match(renderEntries, /state\.bulkEntryMode[\s\S]+data-select-entry/);
+  assert.doesNotMatch(app, /data-select-project|data-select-system/);
   assert.doesNotMatch(app, /function toggleProjectDeleteMode\(\)/);
   assert.doesNotMatch(app, /function toggleSystemDeleteMode\(\)/);
   assert.match(app, /function toggleEntryDeleteMode\(\)/);
@@ -450,6 +452,50 @@ test('bulk delete controls are limited to accounts', () => {
   assert.match(deleteSelectedEntries, /\/api\/entries\/\$\{id\}/);
   assert.doesNotMatch(css, /\.bulk-sidebar-actions/);
   assert.match(css, /\.bulk-check/);
+});
+
+test('dashboard panels expose desktop mouse resize controls without browser storage', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+
+  assert.match(html, /id="sidebarResizeHandle"/);
+  assert.match(html, /id="detailResizeHandle"/);
+  assert.match(html, /aria-label="[^"]*danh sách dự án|aria-label="[^"]*danh sÃ¡ch dá»± Ã¡n/);
+  assert.match(html, /aria-label="[^"]*chi tiết account|aria-label="[^"]*chi tiáº¿t account/);
+
+  assert.match(app, /sidebarWidth:\s*280/);
+  assert.match(app, /detailPanelWidth:\s*520/);
+  assert.match(app, /const PANEL_MIN_WIDTH\s*=\s*10/);
+  assert.doesNotMatch(app, /const SIDEBAR_MAX_WIDTH/);
+  assert.doesNotMatch(app, /const DETAIL_MAX_WIDTH/);
+  assert.match(app, /function maxSidebarWidth\(\)/);
+  assert.match(app, /function maxDetailWidth\(\)/);
+  assert.match(app, /window\.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH/);
+  assert.match(app, /window\.innerWidth - sidebarWidth - PANEL_MIN_WIDTH/);
+  assert.match(app, /function bindPanelResizeActions\(\)/);
+  assert.match(app, /function updatePanelWidths\(\)/);
+  assert.match(app, /--project-sidebar-width/);
+  assert.match(app, /--detail-panel-width/);
+  assert.match(app, /pointerdown/);
+  assert.match(app, /pointermove/);
+  assert.match(app, /pointerup/);
+  assert.match(app, /sidebarHandle\.disabled = state\.sidebarCollapsed/);
+  assert.match(app, /function applyUserPanelLayoutPreferences/);
+  assert.match(app, /function currentPanelLayoutPreferences/);
+  assert.match(app, /function savePanelLayoutPreferences/);
+  assert.match(app, /panelLayout:\s*\{/);
+  assert.match(app, /api\('\/api\/me\/preferences'/);
+  assert.match(app, /schedulePanelLayoutPreferenceSave\(\)/);
+
+  assert.match(css, /--project-sidebar-width:\s*clamp\(220px, 20vw, 320px\)/);
+  assert.match(css, /--project-sidebar-collapsed-width:\s*56px/);
+  assert.match(css, /--detail-panel-width:\s*min\(520px, 42vw\)/);
+  assert.match(css, /\.panel-resize-handle/);
+  assert.match(css, /\.sidebar-resize-handle/);
+  assert.match(css, /\.detail-resize-handle/);
+  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*minmax\(10px, 1fr\) var\(--detail-panel-width\)/);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.panel-resize-handle\s*\{\s*display:\s*none/);
 });
 test('project member UI keeps Supabase UUID identifiers as strings', () => {
   const app = readFileSync('public/app.js', 'utf8');
@@ -470,7 +516,8 @@ test('empty and restricted account states use permission-aware copy', () => {
   const entryListSubtitle = app.match(/function entryListSubtitle\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(app, /No user/);
-  assert.match(renderEntries, /entryListSubtitle\(entry\)/);
+  assert.match(renderEntries, /renderSystemSections\(rows\)/);
+  assert.match(app, /function entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
   assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);
   assert.match(entryListSubtitle, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);

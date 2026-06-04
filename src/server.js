@@ -106,7 +106,7 @@ export function createRequestHandler({
       res.end();
       return;
     }
-    if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/config.js') {
+    if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/runtime-config.js') {
       const config = getPublicSupabaseConfig();
       res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' });
       res.end(`window.APECGLOBAL_CONFIG = ${JSON.stringify(config)};`);
