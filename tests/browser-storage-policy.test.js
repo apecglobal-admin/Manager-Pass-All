@@ -372,24 +372,25 @@ test('new accounts are created from the active project system', () => {
   assert.match(openEntryDialog, /form\.systemId\.value = formEntry\.id \? \(formEntry\.systemId \|\| formEntry\.projectSystemId \|\| ''\) : firstCreatableSystemId\(\)/);
 });
 
-test('project sidebar supports independent expandable system submenus', () => {
+test('project sidebar stays project-only while systems render in the middle column', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
 
-  assert.match(app, /expandedProjectIds: new Set\(\)/);
   assert.match(app, /projectSystemsByProjectId: \{\}/);
   assert.doesNotMatch(html, /id="addSystemBtn"/);
   assert.doesNotMatch(app, /addSystemBtn/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.has\(String\(project\.id\)\)/);
-  assert.match(renderProjects, /data-toggle-project-systems/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\)/);
-  assert.match(renderProjects, /state\.expandedProjectIds\.add\(projectId\)/);
-  assert.match(renderSystemSubmenu, /state\.projectSystemsByProjectId\[projectId\]/);
-  assert.match(renderSystemSubmenu, /data-system-project-id="\$\{projectId\}"/);
-  assert.match(renderSystemSubmenu, /data-edit-system-sidebar/);
-  assert.match(renderSystemSubmenu, /data-delete-system-sidebar/);
+  assert.doesNotMatch(renderProjects, /data-toggle-project-systems|renderSystemSubmenu|project-expand-btn/);
+  assert.doesNotMatch(app, /function renderSystemSubmenu/);
+  assert.doesNotMatch(app, /data-edit-system-sidebar|data-delete-system-sidebar/);
+  assert.match(renderSystemSections, /state\.projectSystems\.map/);
+  assert.match(renderSystemSections, /data-system-filter="\$\{system\.id\}"/);
+  assert.match(renderSystemSections, /data-edit-system="\$\{system\.id\}"/);
+  assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
+  assert.match(renderSystemSections, /renderSystemAccountCards\(system, rows\)/);
+  assert.match(renderSystemAccountCards, /data-select="\$\{entry\.id\}"/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
   assert.match(app, /deleteProjectSystem\(systemId\)/);
@@ -399,7 +400,7 @@ test('admin can drag projects and systems to persist custom order', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindProjectDragActions = app.match(/function bindProjectDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindSystemDragActions = app.match(/function bindSystemDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const persistProjectOrder = app.match(/async function persistProjectOrder\(\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -407,7 +408,7 @@ test('admin can drag projects and systems to persist custom order', () => {
 
   assert.match(renderProjects, /draggable="\$\{isAdmin\(\) \? 'true' : 'false'\}"/);
   assert.match(renderProjects, /data-drag-project/);
-  assert.match(renderSystemSubmenu, /data-drag-system/);
+  assert.match(renderSystemSections, /data-drag-system/);
   assert.match(bindProjectDragActions, /text\/project-id/);
   assert.match(bindProjectDragActions, /moveItemBefore\(state\.projects, draggedId, targetId\)/);
   assert.match(bindSystemDragActions, /text\/system-id/);
@@ -424,7 +425,7 @@ test('bulk delete controls are limited to accounts', () => {
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
   const deleteSelectedEntries = app.match(/async function deleteSelectedEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="deleteSelectedProjectsBtn"/);
@@ -441,7 +442,7 @@ test('bulk delete controls are limited to accounts', () => {
   assert.match(app, /bulkEntryMode: false/);
   assert.doesNotMatch(renderProjects, /data-select-project/);
   assert.doesNotMatch(renderSystemSubmenu, /data-select-system/);
-  assert.match(renderEntries, /state\.bulkEntryMode[\s\S]+data-select-entry/);
+  assert.match(renderSystemAccountCards, /state\.bulkEntryMode[\s\S]+data-select-entry/);
   assert.doesNotMatch(app, /function toggleProjectDeleteMode\(\)/);
   assert.doesNotMatch(app, /function toggleSystemDeleteMode\(\)/);
   assert.match(app, /function toggleEntryDeleteMode\(\)/);
@@ -511,10 +512,12 @@ test('project member UI keeps Supabase UUID identifiers as strings', () => {
 test('empty and restricted account states use permission-aware copy', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
   const entryListSubtitle = app.match(/function entryListSubtitle\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(app, /No user/);
-  assert.match(renderEntries, /entryListSubtitle\(entry\)/);
+  assert.match(renderEntries, /renderSystemSections\(rows\)/);
+  assert.match(renderSystemAccountCards, /entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
   assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);
   assert.match(entryListSubtitle, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);

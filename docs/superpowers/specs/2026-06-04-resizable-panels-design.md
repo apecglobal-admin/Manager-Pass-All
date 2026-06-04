@@ -5,7 +5,7 @@
 Add mouse-driven resize controls for the dashboard's three working areas:
 
 - Project sidebar on the left.
-- Account list in the center.
+- System/account column in the center.
 - Account detail panel on the right.
 
 The existing sidebar collapse button remains available. Resize behavior is desktop-only; mobile keeps the current stacked/slide-over layout.
@@ -22,8 +22,10 @@ The content header and content body use `--project-sidebar-width` for their left
 
 When detail is open, the content body becomes two columns:
 
-- Account list: remaining available space.
+- System/account column: remaining available space.
 - Detail panel: `--detail-panel-width`.
+
+The left sidebar is project-only. Project systems are rendered in the center column, and each system section contains its accounts. Selecting an account opens the account detail panel on the right.
 
 ## Resize Controls
 
@@ -82,6 +84,7 @@ Static tests should cover:
 - JavaScript defines resize state, min/max constraints, pointer event handlers, and CSS variable updates.
 - Sidebar collapse disables sidebar resizing and preserves expanded width.
 - CSS uses custom properties for sidebar and detail widths.
+- Sidebar project chips do not render system submenus; systems render in the center column.
 - Panel widths persist through `preferences.panelLayout` for the current user.
 - Mobile media query hides resize handles and preserves the current mobile layout.
 - Browser storage policy remains unchanged: no `localStorage`, `sessionStorage`, or cookies for panel widths.
