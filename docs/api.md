@@ -1,4 +1,4 @@
-# API Doc - ApecGlobal Manager Pass
+﻿# API Doc - ApecGlobal Manager Pass
 
 Tai lieu nay dung de huong dan du an khac goi API vao ung dung Manager Pass.
 
@@ -7,7 +7,7 @@ Tai lieu nay dung de huong dan du an khac goi API vao ung dung Manager Pass.
 Mac dinh khi chay local:
 
 ```text
-http://localhost:3000
+http://127.0.0.1:3000
 ```
 
 Port lay tu bien moi truong `PORT`, mac dinh la `3000`.
@@ -27,7 +27,7 @@ API dang xac thuc bang session cookie `session`. Sau khi login thanh cong, serve
 Browser fetch:
 
 ```js
-await fetch('http://localhost:3000/api/projects', {
+await fetch('http://127.0.0.1:3000/api/projects', {
   credentials: 'include'
 });
 ```
@@ -35,7 +35,7 @@ await fetch('http://localhost:3000/api/projects', {
 Node.js hoac backend khac:
 
 ```js
-const loginRes = await fetch('http://localhost:3000/api/auth/login', {
+const loginRes = await fetch('http://127.0.0.1:3000/api/auth/login', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
@@ -46,7 +46,7 @@ const loginRes = await fetch('http://localhost:3000/api/auth/login', {
 
 const cookie = loginRes.headers.get('set-cookie')?.split(';')[0];
 
-const projectsRes = await fetch('http://localhost:3000/api/projects', {
+const projectsRes = await fetch('http://127.0.0.1:3000/api/projects', {
   headers: { cookie }
 });
 ```
@@ -604,7 +604,7 @@ Request:
 ## Vi Du Flow Day Du
 
 ```js
-const baseUrl = 'http://localhost:3000';
+const baseUrl = 'http://127.0.0.1:3000';
 
 const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
   method: 'POST',

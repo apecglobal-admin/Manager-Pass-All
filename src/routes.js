@@ -25,6 +25,7 @@ export function createRouter(baseRepos, options = {}) {
   const deleteAuthUserByEmail = options.deleteAuthUserByEmail;
   const appUrl = options.appUrl || 'http://localhost:3000';
   const appDownloadUrl = options.appDownloadUrl || appUrl;
+  const statelessSessions = Boolean(options.statelessSessions);
 
   function reposForAccessToken(accessToken) {
     return accessToken && createReposForAccessToken ? createReposForAccessToken(accessToken) : baseRepos;
@@ -51,8 +52,8 @@ export function createRouter(baseRepos, options = {}) {
     return session;
   }
 
-  function clearSessionCookieHeader() {
-    return 'session=; Max-Age=0; Path=/';
+  function clearSessionCookieHeader(req) {
+    return `session=; Max-Age=0; Path=/; ${sessionCookieSameSite(req)}`;
   }
 
   function clearCurrentSession(req) {
@@ -117,7 +118,7 @@ export function createRouter(baseRepos, options = {}) {
     const { session } = await validateCurrentSession(req);
     const user = session?.user || null;
     if (!user) {
-      sendJson(res, 401, { error: 'Session locked or expired' }, { 'set-cookie': clearSessionCookieHeader() });
+      sendJson(res, 401, { error: 'Session locked or expired' }, { 'set-cookie': clearSessionCookieHeader(req) });
       return null;
     }
     return user;
@@ -150,24 +151,61 @@ export function createRouter(baseRepos, options = {}) {
     return cookie?.id || (sessions.has(token) ? token : null);
   }
 
-  function createSession(user, res, sessionData = {}) {
+  function createSession(user, req, res, sessionData = {}) {
     const token = createSessionToken();
     const session = {
       user,
       ...sessionData,
       exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds
     };
-    sessions.set(token, session);
-    sessionStore?.set(token, session);
-    const cookieValue = signSessionCookie(token);
+    let cookieValue;
+    if (statelessSessions) {
+      cookieValue = signStatelessSessionCookie({ user, exp: session.exp });
+    } else {
+      sessions.set(token, session);
+      sessionStore?.set(token, session);
+      cookieValue = signSessionCookie(token);
+    }
     sendJson(res, 200, { user }, {
-      'set-cookie': `session=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${sessionMaxAgeSeconds}`
+      'set-cookie': `session=${encodeURIComponent(cookieValue)}; HttpOnly; ${sessionCookieSameSite(req)}; Path=/; Max-Age=${sessionMaxAgeSeconds}`
     });
+  }
+
+  function sessionCookieSameSite(req) {
+    return isCrossSiteRequest(req) ? 'SameSite=None; Secure' : 'SameSite=Lax';
+  }
+
+  function isCrossSiteRequest(req) {
+    const origin = req.headers.origin;
+    if (!origin) return false;
+    try {
+      const appOrigin = new URL(appUrl).origin;
+      const requestOrigin = new URL(origin).origin;
+      if (requestOrigin === appOrigin) return false;
+      return !(isLoopbackHttpOrigin(requestOrigin) && isLoopbackHttpOrigin(appOrigin));
+    } catch {
+      return true;
+    }
+  }
+
+  function isLoopbackHttpOrigin(origin) {
+    try {
+      const url = new URL(origin);
+      return url.protocol === 'http:' && ['localhost', '127.0.0.1', '0.0.0.0'].includes(url.hostname.toLowerCase());
+    } catch {
+      return false;
+    }
   }
 
   function signSessionCookie(sessionId) {
     const signature = createHmac('sha256', sessionSecret).update(sessionId).digest('base64url');
     return `v2.${sessionId}.${signature}`;
+  }
+
+  function signStatelessSessionCookie(session) {
+    const payload = Buffer.from(JSON.stringify(session)).toString('base64url');
+    const signature = createHmac('sha256', sessionSecret).update(payload).digest('base64url');
+    return `v1.${payload}.${signature}`;
   }
 
   function readSessionCookie(value) {
@@ -473,12 +511,12 @@ export function createRouter(baseRepos, options = {}) {
           });
           await repos.activity.log('user.access_request', { details: requested.username });
           if (requested.status === 'Active') {
-            return createSession(requested, res, { accessToken: verified.accessToken, supabase: verified });
+            return createSession(requested, req, res, { accessToken: verified.accessToken, supabase: verified });
           }
           return sendJson(res, 403, { error: 'Tai khoan dang cho admin phe duyet' });
         }
 
-        return createSession(user, res, { accessToken: verified.accessToken, supabase: verified });
+        return createSession(user, req, res, { accessToken: verified.accessToken, supabase: verified });
       }
 
       if (req.method === 'POST' && path === '/api/auth/google') {
@@ -516,12 +554,12 @@ export function createRouter(baseRepos, options = {}) {
           });
           await repos.activity.log('user.access_request', { details: requested.username });
           if (requested.status === 'Active') {
-            return createSession(requested, res, { accessToken: body.accessToken, supabase: verified });
+            return createSession(requested, req, res, { accessToken: body.accessToken, supabase: verified });
           }
           return sendJson(res, 403, { error: 'Tai khoan dang cho admin phe duyet' });
         }
 
-        return createSession(user, res, { accessToken: body.accessToken, supabase: verified });
+        return createSession(user, req, res, { accessToken: body.accessToken, supabase: verified });
       }
 
       if (req.method === 'POST' && path === '/api/auth/logout') {
@@ -540,7 +578,7 @@ export function createRouter(baseRepos, options = {}) {
           res,
           200,
           { authenticated: Boolean(user), user: user || null },
-          invalidated ? { 'set-cookie': clearSessionCookieHeader() } : {}
+          invalidated ? { 'set-cookie': clearSessionCookieHeader(req) } : {}
         );
       }
 

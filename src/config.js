@@ -9,10 +9,10 @@ loadDotEnv();
 export const APP_PORT = Number(process.env.PORT || 3000);
 export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 export const DEFAULT_AUTO_LOCK_MINUTES = 15;
-export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+export const SUPABASE_URL = process.env.SUPABASE_URL || '';
+export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-export const APP_URL = process.env.APP_URL || `http://localhost:${APP_PORT}`;
+export const APP_URL = process.env.APP_URL || `http://127.0.0.1:${APP_PORT}`;
 export const APP_DOWNLOAD_URL = process.env.APP_DOWNLOAD_URL || 'https://github.com/apecglobal-admin/Manager-Pass-All/releases/latest';
 
 export function getEncryptionKey() {
@@ -26,16 +26,45 @@ export function cryptoKeyFromSecret(secret) {
 
 export function getPublicSupabaseConfig() {
   return {
-    supabaseUrl: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+    apiBaseUrl: resolvePublicApiBaseUrl()
   };
 }
 
 export function getSupabaseAdminConfig() {
   return {
-    supabaseUrl: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    supabaseUrl: process.env.SUPABASE_URL || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   };
+}
+
+function resolvePublicApiBaseUrl() {
+  for (const origin of String(process.env.APP_ALLOWED_ORIGINS || '').split(',')) {
+    const normalized = normalizeOrigin(origin);
+    if (isPublicHttpOrigin(normalized)) return normalized;
+  }
+  return '';
+}
+
+function normalizeOrigin(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/$/, '');
+  }
+}
+
+function isPublicHttpOrigin(origin) {
+  if (!/^https?:\/\//i.test(origin)) return false;
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return !['localhost', '127.0.0.1', '0.0.0.0'].includes(hostname);
+  } catch {
+    return false;
+  }
 }
 
 function loadDotEnv() {
