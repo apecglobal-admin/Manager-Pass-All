@@ -25,7 +25,7 @@ When detail is open, the content body becomes two columns:
 - System/account column: remaining available space.
 - Detail panel: `--detail-panel-width`.
 
-The left sidebar is project-only. Project systems are rendered in the center column, and each system section contains its accounts. Selecting an account opens the account detail panel on the right.
+The left sidebar is project-only. Project systems are rendered in the center column as system items only. Selecting a system opens that system's detail panel on the right.
 
 ## Resize Controls
 

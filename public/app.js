@@ -965,10 +965,8 @@ function renderEntries(rows = state.entries) {
   const hasSystemColumn = Boolean(currentProject() && state.projectSystems.length);
   emptyState.classList.toggle('hidden', hasSystemColumn || filtered.length > 0);
   $('#entryList').innerHTML = hasSystemColumn ? renderSystemSections(rows) : '';
-  if (!filtered.some(entry => String(entry.id) === String(state.selectedEntryId))) {
-    state.selectedEntryId = filtered[0]?.id || null;
-  }
-  renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
+  state.selectedEntryId = null;
+  renderSystemDetail(currentSystem());
   bindSystemColumnActions();
   bindRowActions();
   bindSystemDragActions();
@@ -986,20 +984,16 @@ function renderSystemSections(rows = state.entries) {
     </div>
     <div class="system-section-list">
       ${state.projectSystems.map(system => {
-        const entries = rows.filter(entry => entryMatchesSystem(entry, system.id));
         const active = String(system.id) === String(state.selectedSystemId);
         return `
           <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
             <header class="system-section-head">
               <div class="system-section-title">
                 <strong>${escapeHtml(system.name)}</strong>
-                <small>${entries.length} account · ${escapeHtml(system.type || 'System')}</small>
+                <small>${escapeHtml(system.type || 'System')}</small>
               </div>
               ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
             </header>
-            <div class="system-account-list">
-              ${renderSystemAccountCards(system, rows)}
-            </div>
           </section>
         `;
       }).join('')}
@@ -1007,31 +1001,11 @@ function renderSystemSections(rows = state.entries) {
   `;
 }
 
-function renderSystemAccountCards(system, rows) {
-  const entries = rows.filter(entry => entryMatchesSystem(entry, system.id));
-  if (!entries.length) return '<div class="system-account-empty">Chưa có account trong hệ thống này</div>';
-  return entries.map(entry => {
-    const sub = entryListSubtitle(entry);
-    const system = systemForEntry(entry);
-    const badge = system ? `${system.name} · ${system.type || 'System'}` : (entry.type || 'Account');
-    return `
-    <article class="entry-card ${String(entry.id) === String(state.selectedEntryId) ? 'active' : ''}" role="button" tabindex="0" data-select="${entry.id}">
-      ${entry.permissions?.canDelete && state.bulkEntryMode ? `<input class="bulk-check entry-check" type="checkbox" data-select-entry="${entry.id}" ${state.selectedEntryIds.has(String(entry.id)) ? 'checked' : ''} aria-label="Chọn account ${escapeAttr(entry.name)}">` : ''}
-      <div class="card-head">
-        <span class="entry-icon">${svgIcon(iconNameForType(system?.type || entry.type))}</span>
-        <span class="type-badge">${escapeHtml(badge)}</span>
-      </div>
-      <strong class="card-name">${escapeHtml(entry.name)}</strong>
-      <small class="card-sub">${escapeHtml(sub)}</small>
-    </article>
-  `}).join('');
-}
-
 function bindSystemColumnActions() {
   document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
-    if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-select-entry]')) return;
+    if (event.target.closest('[data-edit-system], [data-delete-system]')) return;
     state.selectedSystemId = section.dataset.systemFilter;
-    state.selectedEntryId = visibleEntries()[0]?.id || null;
+    state.selectedEntryId = null;
     state.revealCache.clear();
     renderEntries();
     renderHeader();
@@ -1110,6 +1084,65 @@ function bindRowActions() {
     if (aside) aside.classList.remove('open');
   }));
   syncBulkActionButtons();
+}
+
+function renderSystemDetail(system = currentSystem()) {
+  const aside = $('#detailAside');
+  if (!system) {
+    $('#detailPanel').className = 'detail-empty';
+    $('#detailPanel').innerHTML = `
+      <div class="empty-lock">🛡️</div>
+      <h3>Chọn một hệ thống</h3>
+      <p>Chi tiết hệ thống sẽ hiển thị ở đây</p>
+    `;
+    if (aside) aside.classList.remove('open');
+    return;
+  }
+  if (aside) aside.classList.add('open');
+  const project = currentProject();
+  $('#detailPanel').className = 'detail-content';
+  $('#detailPanel').innerHTML = `
+    <header class="detail-head">
+      <div>
+        <h1>${escapeHtml(system.name)}</h1>
+        <p><span class="tag-dot"></span> ${escapeHtml(project?.name || 'Dự án')}</p>
+      </div>
+      <div class="detail-actions">
+        ${can('users.manage') ? `<button data-edit-system-detail="${system.id}">${svgIcon('edit')} Sửa</button>` : ''}
+      </div>
+    </header>
+
+    <section class="meta-card">
+      <div class="secret-row">
+        <span class="secret-icon">${svgIcon(iconNameForType(system.type || 'System'))}</span>
+        <div>
+          <small>Loại hệ thống</small>
+          <strong>${escapeHtml(system.type || 'System')}</strong>
+        </div>
+      </div>
+      <div class="secret-row">
+        <span class="secret-icon">${svgIcon('shield')}</span>
+        <div>
+          <small>Trạng thái</small>
+          <strong>${escapeHtml(system.status || 'Active')}</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="meta-card">
+      <div class="secret-row">
+        <span class="secret-icon">${svgIcon('link')}</span>
+        <div>
+          <small>Mô tả</small>
+          <strong>${escapeHtml(system.description || 'Chưa có mô tả')}</strong>
+        </div>
+      </div>
+    </section>
+  `;
+  document.querySelectorAll('[data-edit-system-detail]').forEach(button => button.addEventListener('click', () => {
+    const selectedSystem = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystemDetail));
+    if (selectedSystem) openProjectSystemDialog(selectedSystem);
+  }));
 }
 
 function renderDetail(entry) {

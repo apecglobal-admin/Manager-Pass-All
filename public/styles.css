@@ -862,19 +862,6 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   display: inline-flex;
   gap: 4px;
 }
-.system-account-list {
-  display: grid;
-  gap: 8px;
-}
-.system-account-empty {
-  min-height: 42px;
-  display: grid;
-  place-items: center;
-  color: var(--text3);
-  border: 1px dashed rgba(160, 140, 200, .16);
-  border-radius: var(--r-sm);
-  font-size: 12px;
-}
 .entry-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .entry-card {
   min-height: 100px;

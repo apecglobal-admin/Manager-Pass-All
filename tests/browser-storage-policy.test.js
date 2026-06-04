@@ -377,7 +377,6 @@ test('project sidebar stays project-only while systems render in the middle colu
   const html = readFileSync('public/index.html', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(app, /projectSystemsByProjectId: \{\}/);
   assert.doesNotMatch(html, /id="addSystemBtn"/);
@@ -389,8 +388,10 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(renderSystemSections, /data-system-filter="\$\{system\.id\}"/);
   assert.match(renderSystemSections, /data-edit-system="\$\{system\.id\}"/);
   assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
-  assert.match(renderSystemSections, /renderSystemAccountCards\(system, rows\)/);
-  assert.match(renderSystemAccountCards, /data-select="\$\{entry\.id\}"/);
+  assert.doesNotMatch(renderSystemSections, /renderSystemAccountCards|data-select="\$\{entry\.id\}"/);
+  assert.doesNotMatch(app, /function renderSystemAccountCards/);
+  assert.match(app, /function renderSystemDetail\(system = currentSystem\(\)\)/);
+  assert.match(app, /renderSystemDetail\(currentSystem\(\)\)/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
   assert.match(app, /deleteProjectSystem\(systemId\)/);
@@ -425,7 +426,6 @@ test('bulk delete controls are limited to accounts', () => {
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project = currentProject\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
   const deleteSelectedEntries = app.match(/async function deleteSelectedEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="deleteSelectedProjectsBtn"/);
@@ -442,7 +442,7 @@ test('bulk delete controls are limited to accounts', () => {
   assert.match(app, /bulkEntryMode: false/);
   assert.doesNotMatch(renderProjects, /data-select-project/);
   assert.doesNotMatch(renderSystemSubmenu, /data-select-system/);
-  assert.match(renderSystemAccountCards, /state\.bulkEntryMode[\s\S]+data-select-entry/);
+  assert.doesNotMatch(app, /data-select-project|data-select-system/);
   assert.doesNotMatch(app, /function toggleProjectDeleteMode\(\)/);
   assert.doesNotMatch(app, /function toggleSystemDeleteMode\(\)/);
   assert.match(app, /function toggleEntryDeleteMode\(\)/);
@@ -512,12 +512,11 @@ test('project member UI keeps Supabase UUID identifiers as strings', () => {
 test('empty and restricted account states use permission-aware copy', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemAccountCards = app.match(/function renderSystemAccountCards\(system, rows\) \{[\s\S]+?\n\}/)?.[0] || '';
   const entryListSubtitle = app.match(/function entryListSubtitle\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(app, /No user/);
   assert.match(renderEntries, /renderSystemSections\(rows\)/);
-  assert.match(renderSystemAccountCards, /entryListSubtitle\(entry\)/);
+  assert.match(app, /function entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
   assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);
   assert.match(entryListSubtitle, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);
