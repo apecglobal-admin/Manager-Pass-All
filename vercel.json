@@ -14,7 +14,7 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/config.js",
+      "source": "/runtime-config.js",
       "destination": "/api/index.js"
     },
     {
