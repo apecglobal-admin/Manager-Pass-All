@@ -390,8 +390,9 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
   assert.doesNotMatch(renderSystemSections, /renderSystemAccountCards|data-select="\$\{entry\.id\}"/);
   assert.doesNotMatch(app, /function renderSystemAccountCards/);
-  assert.match(app, /function renderSystemDetail\(system = currentSystem\(\)\)/);
-  assert.match(app, /renderSystemDetail\(currentSystem\(\)\)/);
+  assert.doesNotMatch(app, /function renderSystemDetail/);
+  assert.match(app, /renderDetail\(filtered\.find\(entry => String\(entry\.id\) === String\(state\.selectedEntryId\)\) \|\| null\)/);
+  assert.match(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
   assert.match(app, /deleteProjectSystem\(systemId\)/);
