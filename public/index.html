@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260603-systems25">
+    <link rel="stylesheet" href="/styles.css?v=20260604-resize-panels">
   </head>
   <body>
 
@@ -114,6 +114,7 @@
             <input id="projectSearch" class="chip-search" placeholder="Tìm dự án…">
             <nav id="projectList" class="project-chips"></nav>
           </div>
+          <button id="sidebarResizeHandle" class="panel-resize-handle sidebar-resize-handle" type="button" aria-label="Kéo để đổi độ rộng danh sách dự án" title="Kéo để đổi độ rộng danh sách dự án"></button>
         </section>
 
         <!-- Content header: title + filters + add button -->
@@ -133,6 +134,7 @@
             <div id="entryList" class="entry-grid"></div>
             <div id="emptyState" class="empty">Chưa có dữ liệu.</div>
           </div>
+          <button id="detailResizeHandle" class="panel-resize-handle detail-resize-handle" type="button" aria-label="Kéo để đổi độ rộng chi tiết account" title="Kéo để đổi độ rộng chi tiết account"></button>
           <aside class="detail-aside" id="detailAside">
             <div id="detailPanel" class="detail-empty">
               <div class="empty-lock">🛡️</div>
@@ -248,6 +250,6 @@
     <div id="toast" class="toast"></div>
     <script src="/config.js"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260603-systems25"></script>
+    <script src="/app.js?v=20260604-resize-panels"></script>
   </body>
 </html>

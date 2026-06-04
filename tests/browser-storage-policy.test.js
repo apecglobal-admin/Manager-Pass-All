@@ -451,6 +451,40 @@ test('bulk delete controls are limited to accounts', () => {
   assert.doesNotMatch(css, /\.bulk-sidebar-actions/);
   assert.match(css, /\.bulk-check/);
 });
+
+test('dashboard panels expose desktop mouse resize controls without browser storage', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+
+  assert.match(html, /id="sidebarResizeHandle"/);
+  assert.match(html, /id="detailResizeHandle"/);
+  assert.match(html, /aria-label="[^"]*danh sách dự án|aria-label="[^"]*danh sÃ¡ch dá»± Ã¡n/);
+  assert.match(html, /aria-label="[^"]*chi tiết account|aria-label="[^"]*chi tiáº¿t account/);
+
+  assert.match(app, /sidebarWidth:\s*280/);
+  assert.match(app, /detailPanelWidth:\s*520/);
+  assert.match(app, /const SIDEBAR_MIN_WIDTH\s*=\s*220/);
+  assert.match(app, /const SIDEBAR_MAX_WIDTH\s*=\s*420/);
+  assert.match(app, /const DETAIL_MIN_WIDTH\s*=\s*320/);
+  assert.match(app, /function bindPanelResizeActions\(\)/);
+  assert.match(app, /function updatePanelWidths\(\)/);
+  assert.match(app, /--project-sidebar-width/);
+  assert.match(app, /--detail-panel-width/);
+  assert.match(app, /pointerdown/);
+  assert.match(app, /pointermove/);
+  assert.match(app, /pointerup/);
+  assert.match(app, /sidebarHandle\.disabled = state\.sidebarCollapsed/);
+
+  assert.match(css, /--project-sidebar-width:\s*clamp\(220px, 20vw, 320px\)/);
+  assert.match(css, /--project-sidebar-collapsed-width:\s*56px/);
+  assert.match(css, /--detail-panel-width:\s*min\(520px, 42vw\)/);
+  assert.match(css, /\.panel-resize-handle/);
+  assert.match(css, /\.sidebar-resize-handle/);
+  assert.match(css, /\.detail-resize-handle/);
+  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*minmax\(260px, 1fr\) var\(--detail-panel-width\)/);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.panel-resize-handle\s*\{\s*display:\s*none/);
+});
 test('project member UI keeps Supabase UUID identifiers as strings', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const addSelectedProjectMember = app.match(/function addSelectedProjectMember\(\) \{[\s\S]+?\n\}/)?.[0] || '';
