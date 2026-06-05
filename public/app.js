@@ -36,7 +36,6 @@ const state = {
   expandedProjectIds: new Set()
 };
 
-const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
 const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
 const SIDEBAR_COLLAPSED_WIDTH = 56;
@@ -73,7 +72,7 @@ function bindEvents() {
   $('#mixAccent2Color')?.addEventListener('input', event => updateMixThemeColor('accent2', event.target.value));
   $('#newProjectBtn').addEventListener('click', () => openProjectDialog());
   $('#projectSystemForm')?.addEventListener('submit', saveProjectSystem);
-  $('#manageSystemTypesBtn')?.addEventListener('click', openEntryTypeDialog);
+  $('#manageEntryTypesBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#newEntryBtn').addEventListener('click', () => openEntryDialog());
   $('#toggleEntryDeleteModeBtn')?.addEventListener('click', toggleEntryDeleteMode);
   $('#deleteSelectedEntriesBtn')?.addEventListener('click', deleteSelectedEntries);
@@ -914,31 +913,12 @@ function fillEntrySystems(systems = state.projectSystems) {
   const select = $('#entrySystemSelect');
   if (!select) return;
   if (select.tagName !== 'SELECT') return;
-  select.innerHTML = systems.map(system => `<option value="${system.id}">${escapeHtml(system.name)} (${escapeHtml(system.type || 'Web')})</option>`).join('');
-}
-
-function syncEntryTypeWithSystem({ force = false } = {}) {
-  const systemSelect = $('#entrySystemSelect');
-  const typeSelect = $('#entryTypeSelect');
-  if (!systemSelect || !typeSelect) return;
-  const system = state.projectSystems.find(item => String(item.id) === String(systemSelect.value));
-  if (!system?.type) return;
-  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system.type).toLowerCase());
-  if (!matchingType) return;
-  const hasMatchingOption = Array.from(typeSelect.options).some(option => String(option.value) === String(matchingType.id));
-  if (!hasMatchingOption) return;
-  if (force || !typeSelect.value) typeSelect.value = matchingType.id;
+  select.innerHTML = systems.map(system => `<option value="${system.id}">${escapeHtml(system.name)}</option>`).join('');
 }
 
 function systemForEntry(entry = {}) {
   const systemId = entry.systemId || entry.projectSystemId;
   return state.projectSystems.find(system => String(system.id) === String(systemId)) || null;
-}
-
-function entryTypeIdForSystem(systemId) {
-  const system = state.projectSystems.find(item => String(item.id) === String(systemId));
-  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system?.type || '').toLowerCase());
-  return matchingType?.id || state.entryTypes[0]?.id || '';
 }
 
 function entryMatchesSelectedType(entry) {
@@ -992,11 +972,42 @@ function renderSystemSections(rows = state.entries) {
             <header class="system-section-head">
               <div class="system-section-title">
                 <strong>${escapeHtml(system.name)}</strong>
-                <small>${escapeHtml(system.type || 'System')}</small>
               </div>
               ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
             </header>
+            ${renderSystemAccountCards(system.id, rows)}
           </section>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderSystemAccountCards(systemId, rows = state.entries) {
+  const entries = rows.filter(entry => entryMatchesSystem(entry, systemId));
+  if (!entries.length) {
+    return '<div class="system-account-empty">Chưa có account trong hệ thống này</div>';
+  }
+  return `
+    <div class="system-account-list">
+      ${entries.map(entry => {
+        const active = String(entry.id) === String(state.selectedEntryId);
+        const checked = state.selectedEntryIds.has(String(entry.id)) ? 'checked' : '';
+        const canDeleteEntry = Boolean(entry.permissions?.canDelete);
+        return `
+          <article class="entry-card system-account-card ${active ? 'active' : ''}" data-select="${entry.id}" role="button" tabindex="0">
+            ${state.bulkEntryMode && canDeleteEntry ? `<input class="entry-check" type="checkbox" data-select-entry="${entry.id}" ${checked}>` : ''}
+            <div class="card-head">
+              <span class="entry-icon">${svgIcon(iconNameForType(entry.type))}</span>
+              <span class="type-badge">${escapeHtml(entry.type || 'Account')}</span>
+            </div>
+            <strong class="card-name">${escapeHtml(entry.name)}</strong>
+            <small class="card-sub">${escapeHtml(entryListSubtitle(entry))}</small>
+            <div class="entry-card-actions">
+              ${entry.permissions?.canEdit ? `<button type="button" class="chip-btn" title="Sửa account" data-edit="${entry.id}">${svgIcon('edit')}</button>` : ''}
+              ${entry.permissions?.canDelete ? `<button type="button" class="chip-btn danger" title="Xóa account" data-delete="${entry.id}">${svgIcon('trash')}</button>` : ''}
+            </div>
+          </article>
         `;
       }).join('')}
     </div>
@@ -1005,7 +1016,7 @@ function renderSystemSections(rows = state.entries) {
 
 function bindSystemColumnActions() {
   document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
-    if (event.target.closest('[data-edit-system], [data-delete-system]')) return;
+    if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry]')) return;
     state.selectedSystemId = section.dataset.systemFilter;
     state.selectedEntryId = visibleEntries()[0]?.id || null;
     state.revealCache.clear();
@@ -1064,7 +1075,8 @@ function entryListSubtitle(entry) {
 }
 
 function bindRowActions() {
-  document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', event => {
+    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry]')) return;
     const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
     state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
@@ -1074,8 +1086,14 @@ function bindRowActions() {
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
   document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));
   document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
-  document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)))));
-  document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', () => deleteEntry(button.dataset.delete)));
+  document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)));
+  }));
+  document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    deleteEntry(button.dataset.delete);
+  }));
   document.querySelectorAll('[data-select-entry]').forEach(input => input.addEventListener('click', event => {
     event.stopPropagation();
     toggleSetValue(state.selectedEntryIds, input.dataset.selectEntry, input.checked);
@@ -1231,7 +1249,6 @@ async function openProjectSystemDialog(system = {}) {
   form.id.value = system.id || '';
   form.projectId.value = project.id;
   form.name.value = system.name || '';
-  renderProjectSystemTypeOptions(system.type || 'Web', { includeSelected: Boolean(system.id) });
   form.description.value = system.description || '';
   form.status.value = system.status || 'Active';
   $('#projectSystemDialog').showModal();
@@ -1269,41 +1286,9 @@ function resetProjectSystemForm(projectId = state.selectedProjectId) {
   form.id.value = '';
   form.projectId.value = projectId || '';
   form.name.value = '';
-  renderProjectSystemTypeOptions('Web');
   form.description.value = '';
   form.status.value = 'Active';
   $('#saveProjectSystemBtn').textContent = 'Lưu hệ thống';
-}
-
-function projectSystemTypeOptions(selectedType = '', { includeSelected = false } = {}) {
-  const byName = new Map();
-  const configuredTypes = new Map(state.entryTypes
-    .map(type => [String(type.name || '').trim().toLowerCase(), type])
-    .filter(([name]) => Boolean(name)));
-  const activeTypes = state.entryTypes.filter(type => type.isActive !== false).map(type => type.name);
-  const defaultTypes = DEFAULT_SYSTEM_TYPES.filter(type => {
-    const configured = configuredTypes.get(String(type).toLowerCase());
-    return !configured || configured.isActive !== false;
-  });
-  [...defaultTypes, ...activeTypes]
-    .map(type => String(type || '').trim())
-    .filter(Boolean)
-    .forEach(type => {
-      const key = type.toLowerCase();
-      if (!byName.has(key)) byName.set(key, type);
-    });
-  const selected = String(selectedType || '').trim();
-  if (includeSelected && selected && !byName.has(selected.toLowerCase())) byName.set(selected.toLowerCase(), selected);
-  return [...byName.values()];
-}
-
-function renderProjectSystemTypeOptions(selectedType = 'Web', options = {}) {
-  const select = $('#projectSystemTypeSelect');
-  if (!select) return;
-  const selected = String(selectedType || 'Web').trim();
-  const types = projectSystemTypeOptions(selected, options);
-  select.innerHTML = types.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('');
-  select.value = types.find(type => type.toLowerCase() === selected.toLowerCase()) || types[0] || '';
 }
 
 async function deleteProjectSystem(id) {
@@ -1485,7 +1470,6 @@ async function openEntryDialog(entry = {}) {
   form.name.value = formEntry.name || '';
   form.systemId.value = formEntry.id ? (formEntry.systemId || formEntry.projectSystemId || '') : firstCreatableSystemId();
   form.typeId.value = formEntry.id ? entryTypeIdForEntry(formEntry) : firstCreatableEntryTypeId();
-  if (!editing) syncEntryTypeWithSystem({ force: true });
   form.environment.value = formEntry.environment || 'Production';
   form.url.value = formEntry.url || '';
   form.username.value = formEntry.username || '';
@@ -1504,7 +1488,7 @@ async function saveEntry(event) {
   const id = data.id;
   delete data.id;
   data.projectId = state.selectedProjectId;
-  data.typeId = data.typeId || entryTypeIdForSystem(data.systemId);
+  data.typeId = data.typeId || firstCreatableEntryTypeId();
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
   if (!data.password && id) delete data.password;
   try {
@@ -1652,7 +1636,7 @@ function renderEntryTypeManager() {
         <button type="button" class="danger" data-delete-entry-type="${type.id}">Xóa</button>
       </div>
     </article>
-  `).join('') || '<p class="form-hint">Chưa có loại hệ thống.</p>';
+  `).join('') || '<p class="form-hint">Chưa có loại account.</p>';
   document.querySelectorAll('[data-edit-entry-type]').forEach(button => {
     button.addEventListener('click', () => editEntryType(button.dataset.editEntryType));
   });
@@ -1687,8 +1671,8 @@ async function toggleEntryType(id) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect(type.name);
-    toast(type.isActive ? 'Đã tắt loại hệ thống' : 'Đã bật loại hệ thống');
+    refreshEntryTypeSelect(type.id);
+    toast(type.isActive ? 'Đã tắt loại account' : 'Đã bật loại account');
   } catch (error) {
     toast(error.message);
   }
@@ -1697,14 +1681,14 @@ async function toggleEntryType(id) {
 async function deleteEntryType(id) {
   const type = state.entryTypes.find(item => String(item.id) === String(id));
   if (!type) return;
-  if (!confirm(`Xóa loại hệ thống "${type.name}"?`)) return;
+  if (!confirm(`Xóa loại account "${type.name}"?`)) return;
   try {
     await api(`/api/entry-types/${id}`, { method: 'DELETE' });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect();
+    refreshEntryTypeSelect();
     resetEntryTypeForm();
-    toast('Đã xóa loại hệ thống');
+    toast('Đã xóa loại account');
   } catch (error) {
     toast(error.message);
   }
@@ -1720,7 +1704,7 @@ async function saveEntryType(event) {
     sortOrder: form.sortOrder.value ? Number(form.sortOrder.value) : undefined,
     isActive: form.isActive.checked
   };
-  if (!payload.name) return toast('Tên loại hệ thống là bắt buộc');
+  if (!payload.name) return toast('Tên loại account là bắt buộc');
   try {
     await api(id ? `/api/entry-types/${id}` : '/api/entry-types', {
       method: id ? 'PATCH' : 'POST',
@@ -1728,18 +1712,21 @@ async function saveEntryType(event) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect(payload.name);
+    refreshEntryTypeSelect(id || payload.name);
     resetEntryTypeForm();
-    toast(id ? 'Đã cập nhật loại hệ thống' : 'Đã thêm loại hệ thống');
+    toast(id ? 'Đã cập nhật loại account' : 'Đã thêm loại account');
   } catch (error) {
     toast(error.message);
   }
 }
 
-function refreshProjectSystemTypeSelect(preferredType = '') {
-  const select = $('#projectSystemTypeSelect');
+function refreshEntryTypeSelect(preferredType = '') {
+  const select = $('#entryTypeSelect');
   if (!select) return;
-  renderProjectSystemTypeOptions(preferredType || select.value || 'Web');
+  const currentValue = preferredType || select.value || firstCreatableEntryTypeId();
+  fillEntryTypes(entryTypeOptionsForEntry());
+  const option = Array.from(select.options).find(item => String(item.value) === String(currentValue));
+  if (option) select.value = option.value;
 }
 
 let autoLockTimer;
@@ -1916,7 +1903,7 @@ function openMemberPermissionDialog(userId) {
     permission
   ]));
   const columns = permissionColumns();
-  const permissionRows = state.projectSystems.map(system => ({ id: system.id, name: system.name, type: system.type, systemId: system.id }));
+  const permissionRows = state.projectSystems.map(system => ({ id: system.id, name: system.name, systemId: system.id }));
   if (!permissionRows.length) {
     matrix.innerHTML = '<p class="form-hint">Tạo hệ thống trước, sau đó cấp quyền cho thành viên theo từng hệ thống.</p>';
     $('#memberPermissionDialog').showModal();

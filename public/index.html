@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260604-account-detail-restored">
+    <link rel="stylesheet" href="/styles.css?v=20260605-system-account-list">
   </head>
   <body>
 
@@ -178,10 +178,7 @@
         <input name="id" type="hidden">
         <input name="projectId" type="hidden">
         <label><span class="label-text">Tên hệ thống</span><input name="name" required placeholder="VD: Website chính, CMS quản trị"></label>
-        <div class="grid-2">
-          <label><span class="label-text">Loại hệ thống</span><span class="system-type-control"><select id="projectSystemTypeSelect" name="type"></select><button id="manageSystemTypesBtn" class="btn-outline" type="button">+ Loại</button></span></label>
-          <label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
-        </div>
+        <label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
         <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú ngắn"></textarea></label>
         <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveProjectSystemBtn" class="btn-accent" value="default">Lưu hệ thống</button></div>
       </form>
@@ -200,7 +197,7 @@
         <div class="form-section"><div class="section-label">THÔNG TIN</div>
           <label><span class="label-text">Tên</span><input name="name" required placeholder="Admin Portal"></label>
           <input name="systemId" id="entrySystemSelect" type="hidden">
-          <select name="typeId" id="entryTypeSelect" hidden></select>
+          <label><span class="label-text">Loại account</span><span class="system-type-control"><select name="typeId" id="entryTypeSelect"></select><button id="manageEntryTypesBtn" class="btn-outline" type="button">+ Loại</button></span></label>
           <div class="grid-2"><label><span class="label-text">Môi trường</span><select name="environment"><option>Production</option><option>Staging</option><option>Development</option><option>Testing</option><option>Other</option></select></label><label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label></div>
         </div>
         <div class="form-section"><div class="section-label">TRUY CẬP</div>
@@ -216,7 +213,7 @@
     </dialog>
     <dialog id="entryTypeDialog">
       <form id="entryTypeForm" method="dialog" class="modal-form wide">
-        <div class="modal-head"><h3>Loại hệ thống</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
+        <div class="modal-head"><h3>Loại account</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="id" type="hidden">
         <section class="form-section compact-section entry-type-editor">
           <div class="entry-type-form-head">
@@ -250,6 +247,6 @@
     <div id="toast" class="toast"></div>
     <script src="/runtime-config.js?v=20260604-runtime-config"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260604-account-detail-restored"></script>
+    <script src="/app.js?v=20260605-system-account-list"></script>
   </body>
 </html>
