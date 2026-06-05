@@ -375,7 +375,11 @@ test('new accounts are created from the active project system', () => {
 
 test('project content renders even when systems or entries fail to load', () => {
   const app = readFileSync('public/app.js', 'utf8');
-  const loadEntries = app.match(/async function loadEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const loadEntries = app.slice(
+    app.indexOf('async function loadEntries()'),
+    app.indexOf('async function loadProjectSystems')
+  );
+  const entriesCatch = loadEntries.match(/state\.entries = await api[\s\S]+?catch \(error\) \{([\s\S]+?)\n  \} finally/)?.[1] || '';
 
   assert.match(loadEntries, /try \{/);
   assert.match(loadEntries, /catch \(error\)/);
@@ -383,6 +387,7 @@ test('project content renders even when systems or entries fail to load', () => 
   assert.match(loadEntries, /finally \{/);
   assert.match(loadEntries, /renderHeader\(\)/);
   assert.match(loadEntries, /renderEntries\(\)/);
+  assert.doesNotMatch(entriesCatch, /state\.projectSystems = \[\]/);
 });
 
 test('project sidebar stays project-only while systems render in the middle column', () => {

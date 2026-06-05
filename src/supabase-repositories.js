@@ -880,7 +880,7 @@ function mapEntry(row, encryptionKey) {
     url: row.url || '',
     username: row.username || '',
     passwordMasked: true,
-    notes: decryptPayload(row.secret_notes_cipher, encryptionKey),
+    notes: decryptPayloadOrEmpty(row.secret_notes_cipher, encryptionKey),
     status: row.status || 'Active',
     tags: row.tags || [],
     permissions: fullEntryPermissions(),
@@ -965,6 +965,19 @@ function encryptPayload(value, encryptionKey) {
 function decryptPayload(value, encryptionKey) {
   if (!value || !encryptionKey) return '';
   return decryptText(JSON.stringify(value), encryptionKey);
+}
+
+function decryptPayloadOrEmpty(value, encryptionKey) {
+  try {
+    return decryptPayload(value, encryptionKey);
+  } catch (error) {
+    if (isDecryptAuthError(error)) return '';
+    throw error;
+  }
+}
+
+function isDecryptAuthError(error) {
+  return /Unsupported state or unable to authenticate data/i.test(error?.message || '');
 }
 
 function normalizeEmail(value) {

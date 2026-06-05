@@ -232,6 +232,33 @@ test('reveals encrypted Supabase entry password', async () => {
   assert.equal(password, 'supabase-secret');
 });
 
+test('lists Supabase entries when a note cipher was encrypted with another app secret', async () => {
+  const activeKey = Buffer.alloc(32, 10);
+  const oldKey = Buffer.alloc(32, 11);
+  const rows = createRows();
+  rows.entries.push({
+    id: 'entry-old-note',
+    project_id: 'project-1',
+    name: 'Apec Global Account',
+    type: 'Web',
+    password_cipher: null,
+    secret_notes_cipher: JSON.parse(encryptText('old private note', oldKey)),
+    tags: [],
+    status: 'Active',
+    deleted_at: null
+  });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: activeKey
+  });
+
+  const entries = await repos.entries.listByProject('project-1');
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].name, 'Apec Global Account');
+  assert.equal(entries[0].notes, '');
+});
+
 test('project create resolves a personal vault for the signed-in owner', async () => {
   const rows = createRows();
   rows.vaults.push({
