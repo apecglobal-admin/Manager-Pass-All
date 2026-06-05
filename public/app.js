@@ -1102,7 +1102,7 @@ function bindRowActions() {
   }));
   document.querySelectorAll('.close-detail').forEach(button => button.addEventListener('click', () => {
     const aside = $('#detailAside');
-    if (aside) aside.classList.remove('open');
+    if (aside) aside.classList.add('open');
   }));
   syncBulkActionButtons();
 }
@@ -1117,7 +1117,7 @@ function renderDetail(entry) {
       <h3>Chọn một account</h3>
       <p>Chi tiết sẽ hiển thị ở đây</p>
     `;
-    if (aside) aside.classList.remove('open');
+    if (aside) aside.classList.add('open');
     return;
   }
   if (aside) aside.classList.add('open');

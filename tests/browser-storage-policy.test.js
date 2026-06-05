@@ -548,6 +548,17 @@ test('detail view hides notes and tags when note permission is not granted', () 
   assert.match(renderDetail, /Bị giới hạn|Bá»‹ giá»›i háº¡n/);
 });
 
+test('account detail panel remains visible when no account is selected', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+  const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(renderDetail, /if \(!entry\) \{/);
+  assert.match(renderDetail, /if \(aside\) aside\.classList\.add\('open'\)/);
+  assert.doesNotMatch(renderDetail, /if \(aside\) aside\.classList\.remove\('open'\)/);
+  assert.match(css, /\.content-body:has\(\.detail-aside\.open\) \.system-account-card/);
+});
+
 test('browser UI source does not contain mojibake text', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
