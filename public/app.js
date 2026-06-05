@@ -968,15 +968,17 @@ function renderSystemSections(rows = state.entries) {
       ${state.projectSystems.map(system => {
         const active = String(system.id) === String(state.selectedSystemId);
         return `
-          <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
-            <header class="system-section-head">
-              <div class="system-section-title">
-                <strong>${escapeHtml(system.name)}</strong>
-              </div>
-              ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
-            </header>
+          <div class="system-group ${active ? 'active' : ''}">
+            <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+              <header class="system-section-head">
+                <div class="system-section-title">
+                  <strong>${escapeHtml(system.name)}</strong>
+                </div>
+                ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
+              </header>
+            </section>
             ${renderSystemAccountCards(system.id, rows)}
-          </section>
+          </div>
         `;
       }).join('')}
     </div>
@@ -985,9 +987,7 @@ function renderSystemSections(rows = state.entries) {
 
 function renderSystemAccountCards(systemId, rows = state.entries) {
   const entries = rows.filter(entry => entryMatchesSystem(entry, systemId));
-  if (!entries.length) {
-    return '<div class="system-account-empty">Chưa có account trong hệ thống này</div>';
-  }
+  if (!entries.length) return '';
   return `
     <div class="system-account-list">
       ${entries.map(entry => {

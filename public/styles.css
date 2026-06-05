@@ -827,6 +827,10 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   display: grid;
   gap: 12px;
 }
+.system-group {
+  display: grid;
+  gap: 8px;
+}
 .system-section {
   display: grid;
   gap: 10px;
@@ -865,16 +869,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .system-account-list {
   display: grid;
   gap: 8px;
-}
-.system-account-empty {
-  min-height: 42px;
-  display: grid;
-  place-items: center;
-  padding: 10px;
-  border: 1px dashed var(--line2);
-  border-radius: var(--r-sm);
-  color: var(--text3);
-  font-size: 12px;
+  padding-left: 10px;
 }
 .entry-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .entry-card {
@@ -909,6 +904,9 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   min-height: 86px;
   padding: 12px;
   border-radius: var(--r-sm);
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: rgba(15, 23, 42, .52);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, .18);
 }
 .system-account-card .card-name {
   font-size: 14px;

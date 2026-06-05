@@ -376,6 +376,7 @@ test('new accounts are created from the active project system', () => {
 test('project sidebar stays project-only while systems render in the middle column', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
@@ -391,8 +392,12 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
   assert.match(renderSystemSections, /renderSystemAccountCards\(system\.id, rows\)/);
   assert.match(app, /function renderSystemAccountCards\(systemId, rows = state\.entries\)/);
+  assert.match(renderSystemSections, /class="system-group/);
+  assert.match(app, /if \(!entries\.length\) return ''/);
   assert.match(app, /data-select="\$\{entry\.id\}"/);
+  assert.doesNotMatch(app, /system-account-empty/);
   assert.doesNotMatch(renderSystemSections, /system\.type/);
+  assert.match(css, /\.system-account-card[\s\S]+border:/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
   assert.match(app, /renderDetail\(filtered\.find\(entry => String\(entry\.id\) === String\(state\.selectedEntryId\)\) \|\| null\)/);
   assert.match(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
