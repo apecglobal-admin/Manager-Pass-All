@@ -997,15 +997,16 @@ function renderSystemAccountCards(systemId, rows = state.entries) {
         return `
           <article class="entry-card system-account-card ${active ? 'active' : ''}" data-select="${entry.id}" role="button" tabindex="0">
             ${state.bulkEntryMode && canDeleteEntry ? `<input class="entry-check" type="checkbox" data-select-entry="${entry.id}" ${checked}>` : ''}
-            <div class="card-head">
-              <span class="entry-icon">${svgIcon(iconNameForType(entry.type))}</span>
-              <span class="type-badge">${escapeHtml(entry.type || 'Account')}</span>
+            <div class="account-card-main">
+              <strong class="card-name">${escapeHtml(entry.name)}</strong>
+              <small class="card-sub">${escapeHtml(entryListSubtitle(entry))}</small>
             </div>
-            <strong class="card-name">${escapeHtml(entry.name)}</strong>
-            <small class="card-sub">${escapeHtml(entryListSubtitle(entry))}</small>
-            <div class="entry-card-actions">
-              ${entry.permissions?.canEdit ? `<button type="button" class="chip-btn" title="Sửa account" data-edit="${entry.id}">${svgIcon('edit')}</button>` : ''}
-              ${entry.permissions?.canDelete ? `<button type="button" class="chip-btn danger" title="Xóa account" data-delete="${entry.id}">${svgIcon('trash')}</button>` : ''}
+            <div class="account-menu-wrap">
+              <button type="button" class="account-more-btn" aria-label="Mở menu account" title="Thao tác">...</button>
+              <div class="account-action-menu" role="menu">
+                ${entry.permissions?.canEdit ? `<button type="button" role="menuitem" data-edit="${entry.id}">${svgIcon('edit')} Sửa</button>` : ''}
+                ${entry.permissions?.canDelete ? `<button type="button" role="menuitem" class="danger" data-delete="${entry.id}">${svgIcon('trash')} Xóa</button>` : ''}
+              </div>
             </div>
           </article>
         `;

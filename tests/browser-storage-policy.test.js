@@ -395,9 +395,16 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(renderSystemSections, /class="system-group/);
   assert.match(app, /if \(!entries\.length\) return ''/);
   assert.match(app, /data-select="\$\{entry\.id\}"/);
+  assert.match(app, /class="account-more-btn"/);
+  assert.match(app, /class="account-action-menu"/);
+  assert.match(app, /aria-label="Mở menu account"/);
+  assert.doesNotMatch(app, /class="entry-card-actions"/);
+  assert.doesNotMatch(app, /class="card-head"[\s\S]+class="type-badge"/);
   assert.doesNotMatch(app, /system-account-empty/);
   assert.doesNotMatch(renderSystemSections, /system\.type/);
   assert.match(css, /\.system-account-card[\s\S]+border:/);
+  assert.match(css, /\.account-action-menu[\s\S]+opacity:\s*0/);
+  assert.match(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
   assert.match(app, /renderDetail\(filtered\.find\(entry => String\(entry\.id\) === String\(state\.selectedEntryId\)\) \|\| null\)/);
   assert.match(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
