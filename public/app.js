@@ -569,15 +569,24 @@ async function loadEntries() {
     renderEntries();
     return;
   }
-  await loadProjectSystems();
-  renderProjects();
-  state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
-  pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
-  if (!state.entries.some(entry => entry.id === state.selectedEntryId)) {
-    state.selectedEntryId = state.entries[0]?.id || null;
+  try {
+    await loadProjectSystems();
+    renderProjects();
+    state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
+    pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
+    if (!state.entries.some(entry => entry.id === state.selectedEntryId)) {
+      state.selectedEntryId = state.entries[0]?.id || null;
+    }
+  } catch (error) {
+    state.projectSystems = [];
+    state.entries = [];
+    state.selectedSystemId = null;
+    state.selectedEntryId = null;
+    toast(error.message);
+  } finally {
+    renderHeader();
+    renderEntries();
   }
-  renderHeader();
-  renderEntries();
 }
 
 async function loadProjectSystems(projectId = state.selectedProjectId) {

@@ -373,6 +373,18 @@ test('new accounts are created from the active project system', () => {
   assert.match(openEntryDialog, /form\.systemId\.value = formEntry\.id \? \(formEntry\.systemId \|\| formEntry\.projectSystemId \|\| ''\) : firstCreatableSystemId\(\)/);
 });
 
+test('project content renders even when systems or entries fail to load', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const loadEntries = app.match(/async function loadEntries\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(loadEntries, /try \{/);
+  assert.match(loadEntries, /catch \(error\)/);
+  assert.match(loadEntries, /toast\(error\.message\)/);
+  assert.match(loadEntries, /finally \{/);
+  assert.match(loadEntries, /renderHeader\(\)/);
+  assert.match(loadEntries, /renderEntries\(\)/);
+});
+
 test('project sidebar stays project-only while systems render in the middle column', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
