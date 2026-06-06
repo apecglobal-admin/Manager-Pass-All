@@ -271,12 +271,18 @@ test('copying an allowed password does not reveal it in the UI', () => {
   assert.match(copyPassword, /copyText\(password/);
 });
 
-test('account list is filtered by project systems instead of account types', () => {
+test('accounts stay hidden while systems remain selectable', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const visibleEntries = app.match(/function visibleEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(renderEntries, /visibleEntries/);
+  assert.match(renderEntries, /renderDetail\(null\)/);
+  assert.match(renderEntries, /state\.selectedEntryId = null/);
+  assert.doesNotMatch(renderEntries, /filtered\.find\(entry/);
+  assert.doesNotMatch(app, /function renderSystemAccountCards/);
+  assert.doesNotMatch(app, /system-account-card/);
+  assert.doesNotMatch(app, /aria-label="Mở menu account"/);
   assert.match(visibleEntries, /entryMatchesSelectedSystem/);
   assert.doesNotMatch(visibleEntries, /entryMatchesSelectedType/);
   assert.match(app, /systemForEntry/);
@@ -417,21 +423,19 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(renderSystemSections, /data-edit-system="\$\{system\.id\}"/);
   assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
   assert.match(renderSystemSections, /aria-label="Mở menu hệ thống"/);
-  assert.match(renderSystemSections, /renderSystemAccountCards\(system\.id, rows\)/);
-  assert.match(app, /function renderSystemAccountCards\(systemId, rows = state\.entries\)/);
   assert.match(renderSystemSections, /class="system-group/);
-  assert.match(app, /if \(!entries\.length\) return ''/);
-  assert.match(app, /data-select="\$\{entry\.id\}"/);
   assert.match(app, /class="[^"]*account-more-btn[^"]*"/);
   assert.match(app, /class="[^"]*account-action-menu[^"]*"/);
-  assert.match(app, /aria-label="Mở menu account"/);
+  assert.doesNotMatch(app, /data-select="\$\{entry\.id\}"/);
+  assert.doesNotMatch(app, /aria-label="Mở menu account"/);
   assert.match(app, /closeItemMenus/);
   assert.match(app, /classList\.add\('menu-open'\)/);
   assert.doesNotMatch(app, /class="entry-card-actions"/);
   assert.doesNotMatch(app, /class="card-head"[\s\S]+class="type-badge"/);
   assert.doesNotMatch(app, /system-account-empty/);
   assert.doesNotMatch(renderSystemSections, /system\.type/);
-  assert.match(css, /\.system-account-card[\s\S]+border:/);
+  assert.doesNotMatch(css, /\.system-account-card/);
+  assert.doesNotMatch(css, /\.system-account-list/);
   assert.match(css, /\.account-action-menu[\s\S]+opacity:\s*0/);
   assert.match(css, /\.account-action-menu button[\s\S]+justify-content:\s*flex-start/);
   assert.match(css, /\.item-menu-wrap\.menu-open \.account-action-menu/);
@@ -439,8 +443,8 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(css, /\.system-section:hover \.account-more-btn/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
-  assert.match(app, /renderDetail\(filtered\.find\(entry => String\(entry\.id\) === String\(state\.selectedEntryId\)\) \|\| null\)/);
-  assert.match(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
+  assert.match(app, /renderDetail\(null\)/);
+  assert.doesNotMatch(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
   assert.match(app, /deleteProjectSystem\(systemId\)/);
@@ -495,6 +499,8 @@ test('bulk delete controls are limited to accounts', () => {
   assert.doesNotMatch(app, /function toggleProjectDeleteMode\(\)/);
   assert.doesNotMatch(app, /function toggleSystemDeleteMode\(\)/);
   assert.match(app, /function toggleEntryDeleteMode\(\)/);
+  assert.match(app, /entryToggle\?\.classList\.add\('hidden'\)/);
+  assert.match(app, /deleteSelectedEntriesBtn'\)\?\.classList\.add\('hidden'\)/);
   assert.doesNotMatch(app, /Chá»n xÃ³a dá»± Ã¡n|ChÃ¡Â»Ân xÃƒÂ³a dÃ¡Â»Â± ÃƒÂ¡n/);
   assert.doesNotMatch(app, /Há»§y chá»n dá»± Ã¡n|HÃ¡Â»Â§y chÃ¡Â»Ân dÃ¡Â»Â± ÃƒÂ¡n/);
   assert.match(deleteSelectedEntries, /\/api\/entries\/\$\{id\}/);
@@ -565,6 +571,7 @@ test('empty and restricted account states use permission-aware copy', () => {
 
   assert.doesNotMatch(app, /No user/);
   assert.match(renderEntries, /renderSystemSections\(rows\)/);
+  assert.match(renderEntries, /renderDetail\(null\)/);
   assert.match(app, /function entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
   assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);
@@ -589,7 +596,7 @@ test('account detail panel remains visible when no account is selected', () => {
   assert.match(renderDetail, /if \(!entry\) \{/);
   assert.match(renderDetail, /if \(aside\) aside\.classList\.add\('open'\)/);
   assert.doesNotMatch(renderDetail, /if \(aside\) aside\.classList\.remove\('open'\)/);
-  assert.match(css, /\.content-body:has\(\.detail-aside\.open\) \.system-account-card/);
+  assert.doesNotMatch(css, /\.content-body:has\(\.detail-aside\.open\) \.system-account-card/);
 });
 
 test('browser UI source does not contain mojibake text', () => {

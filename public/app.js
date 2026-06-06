@@ -594,9 +594,7 @@ async function loadEntries() {
   try {
     state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
     pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
-    if (!state.entries.some(entry => entry.id === state.selectedEntryId)) {
-      state.selectedEntryId = state.entries[0]?.id || null;
-    }
+    state.selectedEntryId = null;
   } catch (error) {
     state.entries = [];
     state.selectedEntryId = null;
@@ -699,9 +697,9 @@ function pruneSet(set, allowedValues) {
 
 function syncBulkActionButtons() {
   const entryToggle = $('#toggleEntryDeleteModeBtn');
-  entryToggle?.classList.toggle('hidden', !visibleEntries().some(entry => entry.permissions?.canDelete));
+  entryToggle?.classList.add('hidden');
   if (entryToggle) entryToggle.textContent = state.bulkEntryMode ? 'Hủy chọn account' : 'Chọn xóa account';
-  $('#deleteSelectedEntriesBtn')?.classList.toggle('hidden', !state.bulkEntryMode || state.selectedEntryIds.size === 0);
+  $('#deleteSelectedEntriesBtn')?.classList.add('hidden');
 }
 
 function toggleEntryDeleteMode() {
@@ -821,7 +819,7 @@ function renderHeader() {
   if (title) title.textContent = project?.name || 'Tất cả dự án';
   if (meta) {
     const systemName = system ? system.name : 'He thong';
-    meta.textContent = `${visibleEntries().length} muc - ${systemName}`;
+    meta.textContent = `${state.projectSystems.length} hệ thống - ${systemName}`;
   }
   const search = $('#globalSearch');
   if (search) search.placeholder = project ? `Tìm trong ${project.name}...` : 'Tìm account, URL, username...';
@@ -979,12 +977,10 @@ function renderEntries(rows = state.entries) {
   const emptyState = $('#emptyState');
   emptyState.innerHTML = emptyEntryHtml(filtered, rows);
   const hasSystemColumn = Boolean(currentProject() && state.projectSystems.length);
-  emptyState.classList.toggle('hidden', hasSystemColumn || filtered.length > 0);
+  emptyState.classList.toggle('hidden', hasSystemColumn);
   $('#entryList').innerHTML = hasSystemColumn ? renderSystemSections(rows) : '';
-  if (!filtered.some(entry => String(entry.id) === String(state.selectedEntryId))) {
-    state.selectedEntryId = filtered[0]?.id || null;
-  }
-  renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
+  state.selectedEntryId = null;
+  renderDetail(null);
   bindSystemColumnActions();
   bindRowActions();
   bindSystemDragActions();
@@ -1021,38 +1017,7 @@ function renderSystemSections(rows = state.entries) {
                 ` : ''}
               </header>
             </section>
-            ${renderSystemAccountCards(system.id, rows)}
           </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
-
-function renderSystemAccountCards(systemId, rows = state.entries) {
-  const entries = rows.filter(entry => entryMatchesSystem(entry, systemId));
-  if (!entries.length) return '';
-  return `
-    <div class="system-account-list">
-      ${entries.map(entry => {
-        const active = String(entry.id) === String(state.selectedEntryId);
-        const checked = state.selectedEntryIds.has(String(entry.id)) ? 'checked' : '';
-        const canDeleteEntry = Boolean(entry.permissions?.canDelete);
-        return `
-          <article class="entry-card system-account-card ${active ? 'active' : ''}" data-select="${entry.id}" role="button" tabindex="0">
-            ${state.bulkEntryMode && canDeleteEntry ? `<input class="entry-check" type="checkbox" data-select-entry="${entry.id}" ${checked}>` : ''}
-            <div class="account-card-main">
-              <strong class="card-name">${escapeHtml(entry.name)}</strong>
-              <small class="card-sub">${escapeHtml(entryListSubtitle(entry))}</small>
-            </div>
-            <div class="item-menu-wrap account-menu-wrap">
-              <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu account" title="Thao tác">...</button>
-              <div class="item-action-menu account-action-menu" role="menu">
-                ${entry.permissions?.canEdit ? `<button type="button" role="menuitem" data-edit="${entry.id}">${svgIcon('edit')} Sửa</button>` : ''}
-                ${entry.permissions?.canDelete ? `<button type="button" role="menuitem" class="danger" data-delete="${entry.id}">${svgIcon('trash')} Xóa</button>` : ''}
-              </div>
-            </div>
-          </article>
         `;
       }).join('')}
     </div>
@@ -1063,7 +1028,7 @@ function bindSystemColumnActions() {
   document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
     if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry], .item-menu-wrap')) return;
     state.selectedSystemId = section.dataset.systemFilter;
-    state.selectedEntryId = visibleEntries()[0]?.id || null;
+    state.selectedEntryId = null;
     state.revealCache.clear();
     renderEntries();
     renderHeader();
