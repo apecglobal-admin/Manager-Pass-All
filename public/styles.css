@@ -1001,8 +1001,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   background: var(--bg-input);
   color: var(--text);
 }
-.system-account-card:hover .account-action-menu,
-.system-account-card:focus-within .account-action-menu {
+.account-menu-wrap.menu-open .account-action-menu {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);

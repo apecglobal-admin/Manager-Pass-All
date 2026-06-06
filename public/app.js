@@ -104,6 +104,7 @@ function bindEvents() {
       closeThemeMenu();
       closeMixColorPopover();
     }
+    if (!event.target.closest('.account-menu-wrap')) closeAccountMenus();
   });
   bindPanelResizeActions();
   syncSidebarState();
@@ -1103,7 +1104,7 @@ function entryListSubtitle(entry) {
 
 function bindRowActions() {
   document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', event => {
-    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry]')) return;
+    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry], .account-menu-wrap')) return;
     const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
     state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
@@ -1113,12 +1114,21 @@ function bindRowActions() {
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
   document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));
   document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
+  document.querySelectorAll('.account-more-btn').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const wrap = button.closest('.account-menu-wrap');
+    const willOpen = !wrap?.classList.contains('menu-open');
+    closeAccountMenus();
+    if (willOpen) wrap?.classList.add('menu-open');
+  }));
   document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeAccountMenus();
     openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)));
   }));
   document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeAccountMenus();
     deleteEntry(button.dataset.delete);
   }));
   document.querySelectorAll('[data-select-entry]').forEach(input => input.addEventListener('click', event => {
@@ -1131,6 +1141,10 @@ function bindRowActions() {
     if (aside) aside.classList.add('open');
   }));
   syncBulkActionButtons();
+}
+
+function closeAccountMenus() {
+  document.querySelectorAll('.account-menu-wrap.menu-open').forEach(menu => menu.classList.remove('menu-open'));
 }
 
 function renderDetail(entry) {
