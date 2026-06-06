@@ -274,11 +274,14 @@ test('copying an allowed password does not reveal it in the UI', () => {
 test('accounts stay hidden while systems remain selectable', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const visibleEntries = app.match(/function visibleEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const selectedVisibleEntry = app.match(/function selectedVisibleEntry\(entries = visibleEntries\(\)\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(renderEntries, /visibleEntries/);
-  assert.match(renderEntries, /renderDetail\(null\)/);
-  assert.match(renderEntries, /state\.selectedEntryId = null/);
+  assert.match(renderEntries, /selectedVisibleEntry\(filtered\)/);
+  assert.match(selectedVisibleEntry, /firstVisibleEntry\(entries\)/);
+  assert.match(renderEntries, /renderDetail\(selectedEntry\)/);
+  assert.doesNotMatch(renderEntries, /state\.selectedEntryId = null/);
   assert.doesNotMatch(renderEntries, /filtered\.find\(entry/);
   assert.doesNotMatch(app, /function renderSystemAccountCards/);
   assert.doesNotMatch(app, /system-account-card/);
@@ -337,6 +340,9 @@ test('edit form resolves delegated entry type by name without requiring create p
 test('system-based account flow treats account type as metadata', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveEntry = app.match(/async function saveEntry\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
   const entryTypeOptionsForEntry = app.match(/function entryTypeOptionsForEntry\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="projectSystemTypeSelect"/);
@@ -356,6 +362,9 @@ test('system-based account flow treats account type as metadata', () => {
   assert.doesNotMatch(app, /state\.projectSystems\.map\(system => system\.type\)/);
   assert.doesNotMatch(app, /data\.type === '__custom__'/);
   assert.doesNotMatch(app, /customType/);
+  assert.doesNotMatch(entryDialog, /name="status"/);
+  assert.doesNotMatch(openEntryDialog, /form\.status\.value/);
+  assert.match(saveEntry, /data\.status = 'Active'/);
 });
 
 test('project system dialog only edits one system and closes after save', () => {
@@ -443,7 +452,7 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.match(css, /\.system-section:hover \.account-more-btn/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
-  assert.match(app, /renderDetail\(null\)/);
+  assert.match(app, /renderDetail\(selectedEntry\)/);
   assert.doesNotMatch(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
   assert.match(app, /openProjectSystemDialog\(system\)/);
@@ -571,7 +580,7 @@ test('empty and restricted account states use permission-aware copy', () => {
 
   assert.doesNotMatch(app, /No user/);
   assert.match(renderEntries, /renderSystemSections\(rows\)/);
-  assert.match(renderEntries, /renderDetail\(null\)/);
+  assert.match(renderEntries, /renderDetail\(selectedEntry\)/);
   assert.match(app, /function entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);
   assert.match(app, /Chưa có tài khoản trong dự án|ChÆ°a cÃ³ tÃ i khoáº£n trong dá»± Ã¡n/);

@@ -972,6 +972,18 @@ function visibleEntries(rows = state.entries) {
   return rows.filter(entryMatchesSelectedSystem);
 }
 
+function firstVisibleEntry(entries = visibleEntries()) {
+  return entries[0] || null;
+}
+
+function selectedVisibleEntry(entries = visibleEntries()) {
+  if (state.selectedEntryId) {
+    const selected = entries.find(item => String(item.id) === String(state.selectedEntryId));
+    if (selected) return selected;
+  }
+  return firstVisibleEntry(entries);
+}
+
 function renderEntries(rows = state.entries) {
   const filtered = visibleEntries(rows);
   const emptyState = $('#emptyState');
@@ -979,8 +991,9 @@ function renderEntries(rows = state.entries) {
   const hasSystemColumn = Boolean(currentProject() && state.projectSystems.length);
   emptyState.classList.toggle('hidden', hasSystemColumn);
   $('#entryList').innerHTML = hasSystemColumn ? renderSystemSections(rows) : '';
-  state.selectedEntryId = null;
-  renderDetail(null);
+  const selectedEntry = selectedVisibleEntry(filtered);
+  state.selectedEntryId = selectedEntry?.id || null;
+  renderDetail(selectedEntry);
   bindSystemColumnActions();
   bindRowActions();
   bindSystemDragActions();
@@ -1501,7 +1514,6 @@ async function openEntryDialog(entry = {}) {
   form.password.value = '';
   form.tags.value = (formEntry.tags || []).join(', ');
   form.notes.value = formEntry.notes || '';
-  form.status.value = formEntry.status || 'Active';
   $('#entryDialog').showModal();
   focusDialogField('#entryDialog', 'input[name="name"]');
 }
@@ -1515,6 +1527,7 @@ async function saveEntry(event) {
   data.projectId = state.selectedProjectId;
   data.typeId = data.typeId || firstCreatableEntryTypeId();
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+  data.status = 'Active';
   if (!data.password && id) delete data.password;
   try {
     await api(id ? `/api/entries/${id}` : '/api/entries', {
