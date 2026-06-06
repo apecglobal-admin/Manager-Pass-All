@@ -606,6 +606,18 @@ export function createRouter(baseRepos, options = {}) {
         }))));
       }
 
+      if (req.method === 'GET' && path === '/api/departments') {
+        if (!await requirePermission(req, res, 'users.manage')) return true;
+        return sendJson(res, 200, await repos.departments.list());
+      }
+
+      if (req.method === 'POST' && path === '/api/departments') {
+        if (!await requirePermission(req, res, 'users.manage')) return true;
+        const department = await repos.departments.create(await readJson(req));
+        await repos.activity.log('department.create', { details: department.name });
+        return sendJson(res, 201, department);
+      }
+
       if (req.method === 'POST' && path === '/api/users') {
         const user = await requirePermission(req, res, 'users.manage');
         if (!user) return true;

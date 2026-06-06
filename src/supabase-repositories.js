@@ -15,6 +15,7 @@ export function createSupabaseRepositories({ supabase, encryptionKey }) {
 
   const repos = {
     users: usersRepo(supabase),
+    departments: departmentsRepo(supabase),
     entryTypes: entryTypesRepo(supabase),
     projects: projectsRepo(supabase),
     projectSystems: projectSystemsRepo(supabase),
@@ -86,6 +87,7 @@ function usersRepo(client) {
           role,
           status: bootstrapAdmin ? 'Active' : 'Pending',
           permissions: normalizePermissions([], role),
+          department_id: null,
           preferences: {},
           accepted_at: bootstrapAdmin ? new Date().toISOString() : null
         })
@@ -113,6 +115,7 @@ function usersRepo(client) {
         .insert({
           username,
           display_name: input.displayName?.trim() || username,
+          department_id: input.departmentId || null,
           role,
           status: normalizeUserStatus(input.status || 'Active'),
           permissions: normalizePermissions(input.permissions, role),
@@ -150,6 +153,7 @@ function usersRepo(client) {
         .from('app_users')
         .update({
           display_name: input.displayName?.trim() || current.displayName || current.username,
+          department_id: input.departmentId || null,
           role,
           status: normalizeUserStatus(input.status || current.status || 'Active'),
           permissions: input.permissions === undefined
@@ -186,6 +190,31 @@ function usersRepo(client) {
       if (String(id) === String(currentUserId)) throw new Error('Cannot delete current user');
       const { error } = await client.from('app_users').delete().eq('id', id);
       if (error) throw error;
+    }
+  };
+}
+
+function departmentsRepo(client) {
+  return {
+    async list() {
+      const { data, error } = await client.from('departments').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data.map(mapDepartment);
+    },
+    async create(input) {
+      const name = String(input.name || '').trim();
+      if (!name) throw new Error('Department name is required');
+      const { data, error } = await client
+        .from('departments')
+        .insert({
+          name,
+          description: input.description || '',
+          sort_order: input.sortOrder || await nextDepartmentSortOrder(client)
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapDepartment(data);
     }
   };
 }
@@ -662,8 +691,9 @@ function settingsRepo(client) {
 function exportRepo(repos) {
   return {
     async backupJson({ includePasswords = false } = {}) {
-      const [users, projects, entries, settings] = await Promise.all([
+      const [users, departments, projects, entries, settings] = await Promise.all([
         repos.users.list(),
+        repos.departments.list(),
         repos.projects.list(),
         repos.entries.exportForUser({ role: 'Admin' }, { includePasswords }),
         repos.settings.getAll()
@@ -672,11 +702,13 @@ function exportRepo(repos) {
         exportedAt: new Date().toISOString(),
         counts: {
           users: users.length,
+          departments: departments.length,
           projects: projects.length,
           entries: entries.length,
           settings: Object.keys(settings).length
         },
         users,
+        departments,
         projects,
         entries,
         settings
@@ -769,6 +801,12 @@ async function nextProjectSystemSortOrder(client, projectId) {
   return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
 }
 
+async function nextDepartmentSortOrder(client) {
+  const { data, error } = await client.from('departments').select('sort_order');
+  if (error) throw error;
+  return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
+}
+
 function mapUser(row) {
   if (!row) return null;
   const role = normalizeRole(row.role);
@@ -777,6 +815,7 @@ function mapUser(row) {
     authUserId: row.auth_user_id || null,
     username: row.username,
     displayName: row.display_name || row.username,
+    departmentId: row.department_id || null,
     role,
     status: normalizeUserStatus(row.status),
     permissions: normalizePermissions(row.permissions, role),
@@ -785,6 +824,18 @@ function mapUser(row) {
     inviteExpiresAt: row.invite_expires_at || null,
     acceptedAt: row.accepted_at || null,
     createdAt: row.created_at
+  };
+}
+
+function mapDepartment(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    sortOrder: row.sort_order || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 

@@ -132,6 +132,37 @@ test('updates Supabase user theme preferences', async () => {
   assert.deepEqual(rows.app_users[0].preferences, user.preferences);
 });
 
+test('creates departments and assigns them to Supabase users', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'user-dept',
+    username: 'dept@example.com',
+    display_name: 'Dept User',
+    role: 'Viewer',
+    status: 'Pending',
+    permissions: [],
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 12)
+  });
+
+  const department = await repos.departments.create({ name: 'Marketing' });
+  const user = await repos.users.update('user-dept', {
+    displayName: 'Dept User',
+    role: 'Viewer',
+    status: 'Active',
+    departmentId: department.id,
+    permissions: []
+  });
+  const departments = await repos.departments.list();
+
+  assert.deepEqual(departments.map(item => item.name), ['Marketing']);
+  assert.equal(user.departmentId, department.id);
+  assert.equal(rows.app_users[0].department_id, department.id);
+});
+
 test('lists entry types from Supabase', async () => {
   const rows = createRows();
   rows.entry_types.push({
@@ -201,8 +232,10 @@ test('exports backup JSON from Supabase rows without file paths', async () => {
   const backup = await repos.export.backupJson({ includePasswords: false });
 
   assert.equal(backup.counts.users, 1);
+  assert.equal(backup.counts.departments, 0);
   assert.equal(backup.counts.projects, 1);
   assert.equal(backup.counts.entries, 1);
+  assert.deepEqual(backup.departments, []);
   assert.equal('latestPath' in backup, false);
   assert.equal(backup.entries[0].password, undefined);
   assert.equal(backup.settings.autoLockMinutes, 10);
@@ -316,6 +349,7 @@ function createRows() {
     app_users: [],
     vaults: [],
     projects: [],
+    departments: [],
     entry_types: [],
     entries: [],
     project_memberships: [],

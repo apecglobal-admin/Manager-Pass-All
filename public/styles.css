@@ -1075,6 +1075,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .type-manager-card small { color: var(--text3); margin: 0; }
 .type-manager-card { background: var(--surface-panel-strong); }
 .role-chip { width: fit-content; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: var(--r-pill); padding: 2px 8px; font-size: 10px; font-weight: 900; }
+.department-chip { width: fit-content; color: var(--accent-light); background: var(--accent-dim); border: 1px solid rgba(124, 58, 237, .18); border-radius: var(--r-pill); padding: 2px 8px; font-size: 10px; font-weight: 900; }
 .user-actions,
 .modal-head > div { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .member-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
@@ -1120,6 +1121,10 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .section-label { color: var(--accent-light); font-size: 11px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+.department-field { display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; align-items: end; }
+.department-field button { height: 40px; padding: 0; font-size: 18px; }
+.department-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.department-quick-add button { height: 40px; }
 .system-type-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .system-type-control button { height: 40px; padding: 0 12px; white-space: nowrap; }
 .permission-grid { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }

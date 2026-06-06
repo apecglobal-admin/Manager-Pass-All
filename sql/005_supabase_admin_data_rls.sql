@@ -68,6 +68,13 @@ create policy "entry types admin access" on public.entry_types
   using (public.current_app_user_is_admin())
   with check (public.current_app_user_is_admin());
 
+drop policy if exists "departments admin access" on public.departments;
+create policy "departments admin access" on public.departments
+  for all
+  to authenticated
+  using (public.current_app_user_is_admin())
+  with check (public.current_app_user_is_admin());
+
 drop policy if exists "app settings admin access" on public.app_settings;
 create policy "app settings admin access" on public.app_settings
   for all

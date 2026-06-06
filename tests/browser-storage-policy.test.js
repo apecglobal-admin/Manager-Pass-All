@@ -52,11 +52,18 @@ test('frontend supports a configured API origin for Capacitor runtime', () => {
 test('user management UI exposes pending Google access requests for admin approval', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const userDialog = html.match(/<dialog id="userDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
 
   assert.match(html, /<option>Pending<\/option>/);
+  assert.match(userDialog, /name="departmentId"/);
+  assert.match(userDialog, /id="departmentQuickAdd"/);
   assert.match(app, /Yêu cầu tham gia|YÃªu cáº§u tham gia|Yeu cau tham gia/);
   assert.match(app, /Chờ admin phê duyệt|Chá» admin phÃª duyá»‡t|Cho admin phe duyet/);
   assert.match(app, /Duyệt & phân quyền|Duyá»‡t & phÃ¢n quyá»n|Duyet & phan quyen/);
+  assert.match(app, /state\.departments/);
+  assert.match(app, /api\('\/api\/departments'\)/);
+  assert.match(app, /api\('\/api\/departments',\s*\{/);
+  assert.match(app, /departmentId:\s*form\.departmentId\.value \|\| null/);
   assert.match(app, /user\.status === 'Pending'[\s\S]+form\.status\.value = 'Active'/);
   assert.match(app, /\['Invited', 'Expired'\]\.includes\(user\.status\)[\s\S]+data-invite-user/);
 });

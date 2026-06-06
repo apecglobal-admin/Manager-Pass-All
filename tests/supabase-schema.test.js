@@ -38,3 +38,12 @@ test('Supabase user preferences migration stores per-user UI settings', () => {
   assert.match(sql, /alter table public\.app_users/i);
   assert.match(sql, /add column if not exists preferences jsonb not null default '\{\}'::jsonb/i);
 });
+
+test('Supabase departments migration stores dynamic user departments', () => {
+  const sql = readFileSync('sql/010_departments.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.departments/i);
+  assert.match(sql, /alter table public\.app_users/i);
+  assert.match(sql, /add column if not exists department_id uuid/i);
+  assert.match(sql, /departments admin access/i);
+});

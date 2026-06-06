@@ -1044,6 +1044,77 @@ test('Google access request uses Supabase user token scoped repositories', async
   }
 });
 
+test('admin creates departments and assigns one while approving a pending user', async () => {
+  const repos = createMemoryRepos({
+    users: [
+      {
+        id: 'user-admin',
+        username: 'admin@example.com',
+        displayName: 'Admin',
+        role: 'Admin',
+        status: 'Active',
+        permissions: ['users.manage'],
+        createdAt: '2026-05-27T00:00:00.000Z'
+      },
+      {
+        id: 'user-pending',
+        username: 'pending@example.com',
+        displayName: 'Pending User',
+        role: 'Viewer',
+        status: 'Pending',
+        permissions: [],
+        createdAt: '2026-05-27T00:00:00.000Z'
+      }
+    ]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async token => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: token === 'admin-token' ? 'admin@example.com' : '',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const created = await fetch(`${base}/api/departments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Kinh doanh' })
+    });
+    const department = await created.json();
+    const approved = await fetch(`${base}/api/users/user-pending`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        displayName: 'Pending User',
+        role: 'Viewer',
+        status: 'Active',
+        permissions: [],
+        departmentId: department.id
+      })
+    });
+    const body = await approved.json();
+
+    assert.equal(created.status, 201);
+    assert.equal(department.name, 'Kinh doanh');
+    assert.equal(approved.status, 200);
+    assert.equal(body.user.status, 'Active');
+    assert.equal(body.user.departmentId, department.id);
+  } finally {
+    await app.close();
+  }
+});
+
 function createMemoryRepos(overrides = {}) {
   const rows = {
     users: overrides.users || [{
@@ -1056,6 +1127,7 @@ function createMemoryRepos(overrides = {}) {
       createdAt: '2026-05-27T00:00:00.000Z'
     }],
     projects: overrides.projects || [],
+    departments: overrides.departments || [],
     systems: overrides.systems || [],
     entries: overrides.entries || [],
     entryTypes: [
@@ -1087,7 +1159,8 @@ function createMemoryRepos(overrides = {}) {
           role: bootstrapAdmin ? 'Admin' : 'Viewer',
           status: bootstrapAdmin ? 'Active' : 'Pending',
           permissions: bootstrapAdmin ? ['users.manage'] : [],
-          preferences: {}
+          preferences: {},
+          departmentId: null
         };
         rows.users.push(user);
         return user;
@@ -1106,7 +1179,8 @@ function createMemoryRepos(overrides = {}) {
           role: input.role || 'Viewer',
           status: input.status || 'Active',
           permissions: input.permissions || [],
-          preferences: input.preferences || {}
+          preferences: input.preferences || {},
+          departmentId: input.departmentId || null
         };
         rows.users.push(user);
         return user;
@@ -1128,6 +1202,21 @@ function createMemoryRepos(overrides = {}) {
       },
       async delete(id) {
         rows.users = rows.users.filter(user => user.id !== id);
+      }
+    },
+    departments: {
+      async list() {
+        return rows.departments;
+      },
+      async create(input) {
+        const department = {
+          id: `department-${rows.departments.length + 1}`,
+          name: input.name,
+          description: input.description || '',
+          sortOrder: input.sortOrder || rows.departments.length + 1
+        };
+        rows.departments.push(department);
+        return department;
       }
     },
     entryTypes: {
@@ -1366,11 +1455,13 @@ function createMemoryRepos(overrides = {}) {
           exportedAt: new Date().toISOString(),
           counts: {
             users: rows.users.length,
+            departments: rows.departments.length,
             projects: rows.projects.length,
             entries: rows.entries.length,
             settings: Object.keys(rows.settings).length
           },
           users: rows.users,
+          departments: rows.departments,
           projects: rows.projects,
           entries: await repos.entries.exportForUser(rows.users[0], { includePasswords }),
           settings: rows.settings

@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260605-detail-empty-open">
+    <link rel="stylesheet" href="/styles.css?v=20260606-departments">
   </head>
   <body>
 
@@ -242,6 +242,14 @@
         <p id="userInviteHint" class="form-hint">Hệ thống sẽ tạo user và gửi email mời.</p>
         <div class="grid-2"><label><span class="label-text">Email</span><input name="username" type="email" required autocomplete="email" placeholder="user@company.com"></label><label><span class="label-text">Tên hiển thị</span><input name="displayName" placeholder="Trưởng dự án"></label></div>
         <div class="grid-2"><label><span class="label-text">Mật khẩu</span><input name="password" type="password" placeholder="Để trống nếu không đổi"></label><label><span class="label-text">Trạng thái</span><select name="status"><option>Pending</option><option>Invited</option><option>Active</option><option>Expired</option><option>Inactive</option></select></label></div>
+        <div class="department-field">
+          <label><span class="label-text">Phòng ban</span><select name="departmentId" id="userDepartmentSelect"><option value="">Chưa phân phòng ban</option></select></label>
+          <button type="button" id="toggleDepartmentQuickAddBtn" title="Thêm phòng ban">+</button>
+        </div>
+        <div id="departmentQuickAdd" class="department-quick-add hidden">
+          <input id="departmentQuickAddName" type="text" placeholder="Tên phòng ban mới">
+          <button type="button" id="saveDepartmentQuickAddBtn" class="btn-outline">Thêm</button>
+        </div>
         <label><span class="label-text">Vai trò</span><select name="role" id="userRoleSelect"><option>Admin</option><option>Manager</option><option>Viewer</option></select></label>
         <div class="permission-grid"><label><input type="checkbox" name="permissions" value="users.manage"> Quản lý phân quyền</label></div>
         <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveUserBtn" class="btn-accent" value="default">Lưu</button></div>
@@ -252,6 +260,6 @@
     <div id="toast" class="toast"></div>
     <script src="/runtime-config.js?v=20260604-runtime-config"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260605-decrypt-fallback"></script>
+    <script src="/app.js?v=20260606-departments"></script>
   </body>
 </html>

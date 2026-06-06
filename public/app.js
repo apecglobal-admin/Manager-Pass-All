@@ -20,6 +20,7 @@ const state = {
   vaultSalt: null,
   currentUser: null,
   users: [],
+  departments: [],
   projectMemberDraft: [],
   projectMemberProjectId: null,
   view: 'vault',
@@ -84,6 +85,8 @@ function bindEvents() {
   $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
   $('#userRoleSelect').addEventListener('change', syncRolePermissions);
+  $('#toggleDepartmentQuickAddBtn')?.addEventListener('click', toggleDepartmentQuickAdd);
+  $('#saveDepartmentQuickAddBtn')?.addEventListener('click', saveDepartmentQuickAdd);
   $('#projectSearch').addEventListener('input', renderProjects);
   $('#globalSearch').addEventListener('input', globalSearch);
   $('#exportJsonBtn').addEventListener('click', () => download('/api/export/json?passwords=1', 'apecglobal-backup.json'));
@@ -470,6 +473,7 @@ async function enterApp() {
   appView.classList.remove('hidden');
   applyUserThemePreferences();
   await loadEntryTypes();
+  if (can('users.manage')) await loadDepartments();
   if (state.mode === 'local') {
     const settings = await api('/api/settings');
     state.autoLockMinutes = Number(settings.autoLockMinutes || 15);
@@ -485,6 +489,15 @@ async function loadEntryTypes() {
     state.selectedTypeId = 'All';
   }
   fillEntryTypes();
+}
+
+async function loadDepartments() {
+  if (!can('users.manage')) {
+    state.departments = [];
+    return;
+  }
+  state.departments = await api('/api/departments');
+  fillDepartmentOptions();
 }
 
 function showLogin() {
@@ -1794,6 +1807,7 @@ function renderCurrentUser() {
 async function showUsersPanel() {
   if (!can('users.manage')) return toast('Bạn không có quyền quản lý người dùng');
   state.view = 'users';
+  await loadDepartments();
   state.users = await api('/api/users');
   renderUsersPanel();
 }
@@ -1821,6 +1835,7 @@ function renderUsersPanel() {
             <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
           </div>
           <span class="role-chip">${escapeHtml(user.role)}</span>
+          ${user.departmentId ? `<span class="department-chip">${escapeHtml(departmentName(user.departmentId))}</span>` : ''}
           <p>${permissionSummary(user)}</p>
           <div class="user-actions">
             <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
@@ -1866,6 +1881,7 @@ function openUserDialog(user = {}) {
   form.username.value = user.username || '';
   form.username.disabled = Boolean(user.id);
   form.displayName.value = user.displayName || '';
+  fillDepartmentOptions(user.departmentId || '');
   form.password.value = '';
   form.password.required = false;
   passwordField?.classList.toggle('hidden', creating);
@@ -1881,8 +1897,51 @@ function openUserDialog(user = {}) {
   form.role.value = user.role || 'Viewer';
   setPermissionChecks(user.permissions || []);
   syncRolePermissions();
+  hideDepartmentQuickAdd();
   $('#userDialog').showModal();
   focusDialogField('#userDialog', user.id ? 'input[name="displayName"]' : 'input[name="username"]');
+}
+
+function departmentName(id) {
+  return state.departments.find(department => String(department.id) === String(id))?.name || 'Phòng ban';
+}
+
+function fillDepartmentOptions(selectedId = $('#userDepartmentSelect')?.value || '') {
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  select.innerHTML = [
+    '<option value="">Chưa phân phòng ban</option>',
+    ...state.departments.map(department => `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`)
+  ].join('');
+  select.value = state.departments.some(department => String(department.id) === String(selectedId)) ? selectedId : '';
+}
+
+function toggleDepartmentQuickAdd() {
+  const box = $('#departmentQuickAdd');
+  if (!box) return;
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) $('#departmentQuickAddName')?.focus();
+}
+
+function hideDepartmentQuickAdd() {
+  $('#departmentQuickAdd')?.classList.add('hidden');
+  const input = $('#departmentQuickAddName');
+  if (input) input.value = '';
+}
+
+async function saveDepartmentQuickAdd() {
+  const input = $('#departmentQuickAddName');
+  const name = input?.value.trim();
+  if (!name) return;
+  const department = await api('/api/departments', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+  state.departments = [...state.departments.filter(item => String(item.id) !== String(department.id)), department]
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.name).localeCompare(String(b.name)));
+  fillDepartmentOptions(department.id);
+  hideDepartmentQuickAdd();
+  toast('Đã thêm phòng ban');
 }
 
 function setPermissionChecks(permissions) {
@@ -1994,6 +2053,7 @@ async function saveUser(event) {
     username: form.username.value.trim(),
     displayName: form.displayName.value.trim(),
     password: form.password.value,
+    departmentId: form.departmentId.value || null,
     role: form.role.value,
     status: form.status.value,
     permissions: formData.getAll('permissions')
