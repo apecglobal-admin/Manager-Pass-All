@@ -433,6 +433,7 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.doesNotMatch(renderSystemSections, /system\.type/);
   assert.match(css, /\.system-account-card[\s\S]+border:/);
   assert.match(css, /\.account-action-menu[\s\S]+opacity:\s*0/);
+  assert.match(css, /\.account-action-menu button[\s\S]+justify-content:\s*flex-start/);
   assert.match(css, /\.item-menu-wrap\.menu-open \.account-action-menu/);
   assert.match(css, /\.project-chip:hover \.account-more-btn/);
   assert.match(css, /\.system-section:hover \.account-more-btn/);
