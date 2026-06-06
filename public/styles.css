@@ -611,6 +611,12 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   cursor: pointer;
   font-size: 14px;
 }
+.project-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .project-expand-btn {
   width: 22px;
   height: 22px;
@@ -875,10 +881,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 }
 .system-section-title strong { color: var(--text); font-size: 15px; }
 .system-section-title small { color: var(--text3); font-size: 12px; }
-.system-section-actions {
-  display: inline-flex;
-  gap: 4px;
-}
+.system-section-actions { margin-left: auto; }
 .system-account-list {
   display: grid;
   gap: 8px;
@@ -941,6 +944,15 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   right: 8px;
   z-index: 4;
 }
+.project-chip .item-menu-wrap,
+.system-section-head .item-menu-wrap {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 5;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .account-more-btn {
   width: 26px;
   height: 26px;
@@ -951,6 +963,12 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   color: var(--text3);
   font-size: 16px;
   line-height: 1;
+}
+.project-chip .account-more-btn,
+.system-section-head .account-more-btn {
+  opacity: 0;
+  border-color: var(--line2);
+  background: var(--bg-input);
 }
 .account-action-menu {
   position: absolute;
@@ -995,13 +1013,26 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   width: 13px;
   height: 13px;
 }
+.project-chip .account-action-menu,
+.system-section-head .account-action-menu {
+  top: calc(100% + 6px);
+  right: 0;
+}
 .system-account-card:hover .account-more-btn,
-.system-account-card:focus-within .account-more-btn {
+.system-account-card:focus-within .account-more-btn,
+.project-chip:hover .account-more-btn,
+.project-chip:focus-within .account-more-btn,
+.project-chip.active .account-more-btn,
+.system-section:hover .account-more-btn,
+.system-section:focus-within .account-more-btn,
+.system-section.active .account-more-btn,
+.item-menu-wrap.menu-open .account-more-btn {
+  opacity: 1;
   border-color: var(--line2);
   background: var(--bg-input);
   color: var(--text);
 }
-.account-menu-wrap.menu-open .account-action-menu {
+.item-menu-wrap.menu-open .account-action-menu {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);

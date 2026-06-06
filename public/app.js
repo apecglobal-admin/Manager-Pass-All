@@ -104,7 +104,7 @@ function bindEvents() {
       closeThemeMenu();
       closeMixColorPopover();
     }
-    if (!event.target.closest('.account-menu-wrap')) closeAccountMenus();
+    if (!event.target.closest('.item-menu-wrap')) closeItemMenus();
   });
   bindPanelResizeActions();
   syncSidebarState();
@@ -635,13 +635,19 @@ function renderProjects() {
       <div class="project-chip ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-id="${project.id}" data-drag-project="${project.id}" draggable="${isAdmin() ? 'true' : 'false'}">
         <span class="chip-avatar">${projectIcon(project.name)}</span>
         <strong>${escapeHtml(project.name)}</strong>
-        <span class="chip-actions">
-          ${can('users.manage') ? `<button class="chip-btn" type="button" title="Thành viên" data-project-members="${project.id}">${svgIcon('users')}</button>` : ''}
-          ${isAdmin() ? `<button class="chip-btn" type="button" title="Sửa" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
-        </span>
+        ${can('users.manage') || isAdmin() ? `
+          <div class="item-menu-wrap account-menu-wrap">
+            <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu dự án" title="Thao tác">...</button>
+            <div class="item-action-menu account-action-menu" role="menu">
+              ${can('users.manage') ? `<button type="button" role="menuitem" data-project-members="${project.id}">${svgIcon('users')} Thành viên</button>` : ''}
+              ${isAdmin() ? `<button type="button" role="menuitem" data-edit-project="${project.id}">${svgIcon('edit')} Sửa</button><button type="button" role="menuitem" class="danger" data-delete-project="${project.id}">${svgIcon('trash')} Xóa</button>` : ''}
+            </div>
+          </div>
+        ` : ''}
       </div>
     `).join('');
-  document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async () => {
+  document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async event => {
+    if (event.target.closest('.item-menu-wrap')) return;
     state.view = 'vault';
     if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
     state.selectedProjectId = item.dataset.id;
@@ -651,14 +657,17 @@ function renderProjects() {
   }));
   document.querySelectorAll('[data-edit-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     openProjectDialog(state.projects.find(project => String(project.id) === String(button.dataset.editProject)));
   }));
   document.querySelectorAll('[data-project-members]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     openProjectMembersDialog(state.projects.find(project => String(project.id) === String(button.dataset.projectMembers)));
   }));
   document.querySelectorAll('[data-delete-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     deleteProject(button.dataset.deleteProject);
   }));
   bindProjectDragActions();
@@ -1001,7 +1010,15 @@ function renderSystemSections(rows = state.entries) {
                 <div class="system-section-title">
                   <strong>${escapeHtml(system.name)}</strong>
                 </div>
-                ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
+                ${can('users.manage') ? `
+                  <div class="item-menu-wrap account-menu-wrap system-section-actions">
+                    <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu hệ thống" title="Thao tác">...</button>
+                    <div class="item-action-menu account-action-menu" role="menu">
+                      <button type="button" role="menuitem" data-edit-system="${system.id}">${svgIcon('edit')} Sửa</button>
+                      <button type="button" role="menuitem" class="danger" data-delete-system="${system.id}">${svgIcon('trash')} Xóa</button>
+                    </div>
+                  </div>
+                ` : ''}
               </header>
             </section>
             ${renderSystemAccountCards(system.id, rows)}
@@ -1028,9 +1045,9 @@ function renderSystemAccountCards(systemId, rows = state.entries) {
               <strong class="card-name">${escapeHtml(entry.name)}</strong>
               <small class="card-sub">${escapeHtml(entryListSubtitle(entry))}</small>
             </div>
-            <div class="account-menu-wrap">
-              <button type="button" class="account-more-btn" aria-label="Mở menu account" title="Thao tác">...</button>
-              <div class="account-action-menu" role="menu">
+            <div class="item-menu-wrap account-menu-wrap">
+              <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu account" title="Thao tác">...</button>
+              <div class="item-action-menu account-action-menu" role="menu">
                 ${entry.permissions?.canEdit ? `<button type="button" role="menuitem" data-edit="${entry.id}">${svgIcon('edit')} Sửa</button>` : ''}
                 ${entry.permissions?.canDelete ? `<button type="button" role="menuitem" class="danger" data-delete="${entry.id}">${svgIcon('trash')} Xóa</button>` : ''}
               </div>
@@ -1044,7 +1061,7 @@ function renderSystemAccountCards(systemId, rows = state.entries) {
 
 function bindSystemColumnActions() {
   document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
-    if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry]')) return;
+    if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry], .item-menu-wrap')) return;
     state.selectedSystemId = section.dataset.systemFilter;
     state.selectedEntryId = visibleEntries()[0]?.id || null;
     state.revealCache.clear();
@@ -1053,11 +1070,13 @@ function bindSystemColumnActions() {
   }));
   document.querySelectorAll('[data-edit-system]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     const system = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystem));
     if (system) openProjectSystemDialog(system);
   }));
   document.querySelectorAll('[data-delete-system]').forEach(button => button.addEventListener('click', async event => {
     event.stopPropagation();
+    closeItemMenus();
     const systemId = button.dataset.deleteSystem;
     await deleteProjectSystem(systemId);
   }));
@@ -1104,7 +1123,7 @@ function entryListSubtitle(entry) {
 
 function bindRowActions() {
   document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', event => {
-    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry], .account-menu-wrap')) return;
+    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry], .item-menu-wrap')) return;
     const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
     state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
@@ -1114,21 +1133,21 @@ function bindRowActions() {
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
   document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));
   document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
-  document.querySelectorAll('.account-more-btn').forEach(button => button.addEventListener('click', event => {
+  document.querySelectorAll('.item-more-btn').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
-    const wrap = button.closest('.account-menu-wrap');
+    const wrap = button.closest('.item-menu-wrap');
     const willOpen = !wrap?.classList.contains('menu-open');
-    closeAccountMenus();
+    closeItemMenus();
     if (willOpen) wrap?.classList.add('menu-open');
   }));
   document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
-    closeAccountMenus();
+    closeItemMenus();
     openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)));
   }));
   document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
-    closeAccountMenus();
+    closeItemMenus();
     deleteEntry(button.dataset.delete);
   }));
   document.querySelectorAll('[data-select-entry]').forEach(input => input.addEventListener('click', event => {
@@ -1143,8 +1162,8 @@ function bindRowActions() {
   syncBulkActionButtons();
 }
 
-function closeAccountMenus() {
-  document.querySelectorAll('.account-menu-wrap.menu-open').forEach(menu => menu.classList.remove('menu-open'));
+function closeItemMenus() {
+  document.querySelectorAll('.item-menu-wrap.menu-open').forEach(menu => menu.classList.remove('menu-open'));
 }
 
 function renderDetail(entry) {
