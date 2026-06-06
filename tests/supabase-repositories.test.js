@@ -344,6 +344,35 @@ test('entry create inherits vault id from its project', async () => {
   assert.equal(rows.entries[0].vault_id, 'vault-owner');
 });
 
+test('entry credentials are stored as department-scoped encrypted rows', async () => {
+  const rows = createRows();
+  rows.vaults.push({ id: 'vault-owner', owner_id: 'auth-owner' });
+  rows.projects.push({ id: 'project-owner', vault_id: 'vault-owner', name: 'Owner Project' });
+  rows.departments.push({ id: 'department-sales', name: 'Sales' });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 9)
+  });
+
+  const entry = await repos.entries.create({
+    projectId: 'project-owner',
+    type: 'Admin',
+    name: 'Owner Account',
+    credentials: [{
+      departmentId: 'department-sales',
+      username: 'sales-user',
+      password: 'sales-pass'
+    }]
+  });
+
+  assert.equal(entry.credentials.length, 1);
+  assert.equal(entry.credentials[0].departmentId, 'department-sales');
+  assert.equal(entry.credentials[0].username, 'sales-user');
+  assert.equal(rows.entry_credentials[0].username, 'sales-user');
+  assert.notEqual(rows.entry_credentials[0].password_cipher, 'sales-pass');
+  assert.equal(await repos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'sales-pass');
+});
+
 function createRows() {
   return {
     app_users: [],
@@ -352,6 +381,7 @@ function createRows() {
     departments: [],
     entry_types: [],
     entries: [],
+    entry_credentials: [],
     project_memberships: [],
     detailed_permissions: [],
     activity_logs: [],
@@ -450,6 +480,7 @@ class FakeQuery {
         id: value.id || `${this.table}-${tableRows.length + 1}`,
         created_at: value.created_at || '2026-05-27T00:00:00.000Z',
         updated_at: value.updated_at || '2026-05-27T00:00:00.000Z',
+        deleted_at: value.deleted_at ?? null,
         ...value
       }));
       tableRows.push(...prepared);

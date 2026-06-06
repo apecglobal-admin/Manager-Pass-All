@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260606-hide-account-list">
+    <link rel="stylesheet" href="/styles.css?v=20260606-department-credentials">
   </head>
   <body>
 
@@ -207,7 +207,8 @@
         </div>
         <div class="form-section"><div class="section-label">TRUY CẬP</div>
           <label><span class="label-text">URL</span><input name="url" placeholder="https://"></label>
-          <div class="grid-2"><label><span class="label-text">Username</span><input name="username" placeholder="email / user"></label><label><span class="label-text">Password</span><input name="password" type="password" placeholder="Để trống nếu không đổi"></label></div>
+          <div class="credential-section-head"><span class="label-text">User theo phòng ban</span><button id="addCredentialBtn" type="button" class="btn-outline">+ Thêm user</button></div>
+          <div id="credentialRows" class="credential-rows"></div>
         </div>
         <div class="form-section compact-section">
           <label><span class="label-text">Tags</span><input name="tags" placeholder="crm, admin"></label>
@@ -260,6 +261,6 @@
     <div id="toast" class="toast"></div>
     <script src="/runtime-config.js?v=20260604-runtime-config"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260606-auto-select-account"></script>
+    <script src="/app.js?v=20260606-department-credentials"></script>
   </body>
 </html>

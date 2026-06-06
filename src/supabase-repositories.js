@@ -462,7 +462,8 @@ function entriesRepo(client, encryptionKey) {
         .is('deleted_at', null)
         .order('name', { ascending: true });
       if (error) throw error;
-      return data.map(row => mapEntry(row, encryptionKey));
+      const entries = data.map(row => mapEntry(row, encryptionKey));
+      return attachEntryCredentials(entries, await credentialsForEntries(client, entries.map(entry => entry.id)));
     },
     async listByProjectForUser(projectId) {
       return await this.listByProject(projectId);
@@ -475,19 +476,20 @@ function entriesRepo(client, encryptionKey) {
         .order('name', { ascending: true });
       if (error) throw error;
       const term = String(query || '').toLowerCase();
-      return data
+      const entries = data
         .filter(row => !term
           || String(row.name || '').toLowerCase().includes(term)
           || String(row.url || '').toLowerCase().includes(term)
           || String(row.username || '').toLowerCase().includes(term))
         .map(row => mapEntry(row, encryptionKey));
+      return attachEntryCredentials(entries, await credentialsForEntries(client, entries.map(entry => entry.id)));
     },
     async searchForUser(query) {
       return await this.search(query);
     },
     async get(id) {
       const row = await getEntryRow(client, id);
-      return mapEntry(row, encryptionKey);
+      return attachEntryCredentials([mapEntry(row, encryptionKey)], await credentialsForEntries(client, [id]))[0];
     },
     async getRaw(id) {
       return await getEntryRow(client, id);
@@ -514,7 +516,8 @@ function entriesRepo(client, encryptionKey) {
         .select()
         .single();
       if (error) throw error;
-      return mapEntry(data, encryptionKey);
+      if (Array.isArray(input.credentials)) await syncEntryCredentials(client, data.id, input.credentials, encryptionKey);
+      return attachEntryCredentials([mapEntry(data, encryptionKey)], await credentialsForEntries(client, [data.id]))[0];
     },
     async update(id, input) {
       const patch = {
@@ -534,7 +537,8 @@ function entriesRepo(client, encryptionKey) {
       if (input.password !== undefined) patch.password_cipher = encryptPayload(input.password || '', encryptionKey);
       const { data, error } = await client.from('entries').update(patch).eq('id', id).select().single();
       if (error) throw error;
-      return mapEntry(data, encryptionKey);
+      if (Array.isArray(input.credentials)) await syncEntryCredentials(client, id, input.credentials, encryptionKey);
+      return attachEntryCredentials([mapEntry(data, encryptionKey)], await credentialsForEntries(client, [id]))[0];
     },
     async delete(id) {
       const { error } = await client
@@ -549,6 +553,13 @@ function entriesRepo(client, encryptionKey) {
     },
     async revealPasswordForUser(id) {
       return await this.revealPassword(id);
+    },
+    async getCredential(entryId, credentialId) {
+      return mapCredential(await getCredentialRow(client, entryId, credentialId));
+    },
+    async revealCredentialPassword(entryId, credentialId) {
+      const credential = await getCredentialRow(client, entryId, credentialId);
+      return decryptPayload(credential?.password_cipher, encryptionKey);
     },
     async exportForUser(_user, { includePasswords = false } = {}) {
       const { data, error } = await client.from('entries').select('*').is('deleted_at', null).order('name', { ascending: true });
@@ -744,6 +755,90 @@ async function getEntryRow(client, id) {
   return data;
 }
 
+async function getCredentialRow(client, entryId, credentialId) {
+  const { data, error } = await client
+    .from('entry_credentials')
+    .select('*')
+    .eq('entry_id', entryId)
+    .eq('id', credentialId)
+    .is('deleted_at', null)
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error('Credential not found');
+  return data;
+}
+
+async function credentialsForEntries(client, entryIds) {
+  if (!entryIds.length) return [];
+  const { data, error } = await client
+    .from('entry_credentials')
+    .select('*')
+    .in('entry_id', entryIds)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data.map(mapCredential);
+}
+
+function attachEntryCredentials(entries, credentials) {
+  const byEntryId = new Map();
+  for (const credential of credentials) {
+    const key = String(credential.entryId);
+    byEntryId.set(key, [...(byEntryId.get(key) || []), credential]);
+  }
+  return entries.map(entry => {
+    const entryCredentials = byEntryId.get(String(entry.id)) || [];
+    return {
+      ...entry,
+      credentials: entryCredentials,
+      username: entryCredentials[0]?.username || entry.username || ''
+    };
+  });
+}
+
+async function syncEntryCredentials(client, entryId, credentials, encryptionKey) {
+  const { data: existingRows, error: existingError } = await client
+    .from('entry_credentials')
+    .select('*')
+    .eq('entry_id', entryId)
+    .is('deleted_at', null);
+  if (existingError) throw existingError;
+
+  const existingIds = new Set((existingRows || []).map(row => String(row.id)));
+  const incomingIds = new Set(credentials.filter(item => item.id).map(item => String(item.id)));
+
+  for (const id of existingIds) {
+    if (incomingIds.has(id)) continue;
+    const { error } = await client
+      .from('entry_credentials')
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  for (const [index, credential] of credentials.entries()) {
+    const payload = {
+      entry_id: entryId,
+      department_id: credential.departmentId || null,
+      username: credential.username || '',
+      sort_order: index + 1,
+      updated_at: new Date().toISOString()
+    };
+    if (credential.password !== undefined) payload.password_cipher = encryptPayload(credential.password || '', encryptionKey);
+
+    if (credential.id && existingIds.has(String(credential.id))) {
+      const { error } = await client.from('entry_credentials').update(payload).eq('id', credential.id);
+      if (error) throw error;
+    } else {
+      const { error } = await client.from('entry_credentials').insert({
+        ...payload,
+        password_cipher: payload.password_cipher || encryptPayload('', encryptionKey)
+      });
+      if (error) throw error;
+    }
+  }
+}
+
 async function getProjectRow(client, id) {
   if (!id) return null;
   const { data, error } = await client.from('projects').select('*').eq('id', id).single();
@@ -935,6 +1030,20 @@ function mapEntry(row, encryptionKey) {
     status: row.status || 'Active',
     tags: row.tags || [],
     permissions: fullEntryPermissions(),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapCredential(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    entryId: row.entry_id,
+    departmentId: row.department_id || null,
+    username: row.username || '',
+    passwordMasked: true,
+    sortOrder: row.sort_order || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

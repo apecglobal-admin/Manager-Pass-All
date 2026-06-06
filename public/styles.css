@@ -1117,6 +1117,13 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .department-quick-add button { height: 40px; }
 .system-type-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .system-type-control button { height: 40px; padding: 0 12px; white-space: nowrap; }
+.credential-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.credential-rows { display: grid; gap: 10px; }
+.credential-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(160px, 1fr) minmax(160px, 1fr) 36px; gap: 10px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); }
+.credential-remove { width: 36px; height: 40px; padding: 0; }
+.credential-detail-list { gap: 12px; }
+.credential-detail-item { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.credential-detail-item:last-child { padding-bottom: 0; border-bottom: 0; }
 .permission-grid { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
 .permission-grid label { display: flex; align-items: center; gap: 8px; color: var(--text2); }
 .permission-grid input { width: 15px; height: 15px; accent-color: var(--accent); }

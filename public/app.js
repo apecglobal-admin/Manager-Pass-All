@@ -81,6 +81,7 @@ function bindEvents() {
   $('#addProjectMemberBtn')?.addEventListener('click', addSelectedProjectMember);
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
   $('#entryForm').addEventListener('submit', saveEntry);
+  $('#addCredentialBtn')?.addEventListener('click', () => addEntryCredentialRow());
   $('#entryTypeForm')?.addEventListener('submit', saveEntryType);
   $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
@@ -1109,8 +1110,8 @@ function bindRowActions() {
     renderHeader();
   }));
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
-  document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));
-  document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
+  document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal, button.dataset.credentialReveal || '')));
+  document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass, button.dataset.credentialCopy || '')));
   document.querySelectorAll('.item-more-btn').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
     const wrap = button.closest('.item-menu-wrap');
@@ -1159,7 +1160,6 @@ function renderDetail(entry) {
   }
   if (aside) aside.classList.add('open');
 
-  const password = state.revealCache.get(entry.id) || '************';
   const canEditEntry = Boolean(entry.permissions?.canEdit);
   const canDeleteEntry = Boolean(entry.permissions?.canDelete);
   const canRevealEntryPassword = Boolean(entry.permissions?.canRevealPassword);
@@ -1180,25 +1180,8 @@ function renderDetail(entry) {
       </div>
     </header>
 
-    <section class="secret-card">
-      <div class="secret-row">
-        <span class="secret-icon">${svgIcon('user')}</span>
-        <div>
-          <small>Email</small>
-          <strong>${canViewUsername ? escapeHtml(entry.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
-        </div>
-        ${canViewUsername && entry.username ? `<button class="ghost-btn" data-copy="${escapeAttr(entry.username)}">${svgIcon('copy')} Copy</button>` : ''}
-      </div>
-      <div class="secret-row">
-        <span class="secret-icon">${svgIcon('key')}</span>
-        <div>
-          <small>Mật khẩu</small>
-          <strong class="password-text">${escapeHtml(password)}</strong>
-        </div>
-        ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-        <button class="ghost-btn" data-reveal="${entry.id}">${svgIcon('eye')} Xem</button>
-        <button class="ghost-btn" data-copy-pass="${entry.id}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
-      </div>
+    <section class="secret-card credential-detail-list">
+      ${credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword })}
     </section>
 
     <section class="secret-card single">
@@ -1510,12 +1493,123 @@ async function openEntryDialog(entry = {}) {
   form.typeId.value = formEntry.id ? entryTypeIdForEntry(formEntry) : firstCreatableEntryTypeId();
   form.environment.value = formEntry.environment || 'Production';
   form.url.value = formEntry.url || '';
-  form.username.value = formEntry.username || '';
-  form.password.value = '';
+  renderEntryCredentials(formEntry.credentials?.length ? formEntry.credentials : defaultEntryCredentials(formEntry));
   form.tags.value = (formEntry.tags || []).join(', ');
   form.notes.value = formEntry.notes || '';
   $('#entryDialog').showModal();
   focusDialogField('#entryDialog', 'input[name="name"]');
+}
+
+function defaultEntryCredentials(entry = {}) {
+  if (entry.id || entry.username) {
+    return [{
+      id: '',
+      departmentId: currentCredentialDepartmentId(),
+      username: entry.username || '',
+      password: ''
+    }];
+  }
+  return [{ id: '', departmentId: currentCredentialDepartmentId(), username: '', password: '' }];
+}
+
+function currentCredentialDepartmentId() {
+  if (isAdmin()) return state.departments[0]?.id || '';
+  return state.currentUser?.departmentId || '';
+}
+
+function credentialDepartmentOptions(selectedId = '') {
+  const departments = state.departments.length
+    ? state.departments
+    : state.currentUser?.departmentId
+      ? [{ id: state.currentUser.departmentId, name: 'Phòng ban của tôi' }]
+      : [];
+  const options = ['<option value="">Chưa phân phòng ban</option>']
+    .concat(departments.map(department => `<option value="${escapeAttr(department.id)}">${escapeHtml(department.name)}</option>`));
+  return options.join('').replace(`value="${escapeAttr(selectedId)}"`, `value="${escapeAttr(selectedId)}" selected`);
+}
+
+function renderEntryCredentials(credentials = []) {
+  const rows = $('#credentialRows');
+  if (!rows) return;
+  rows.innerHTML = credentials.map(credential => credentialRowHtml(credential)).join('');
+  rows.querySelectorAll('[data-remove-credential]').forEach(button => button.addEventListener('click', () => {
+    button.closest('.credential-row')?.remove();
+    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
+  }));
+}
+
+function credentialRowHtml(credential = {}) {
+  const rowId = escapeAttr(credential.id || '');
+  return `
+    <div class="credential-row" data-credential-id="${rowId}">
+      <label><span class="label-text">Phòng ban</span><select data-credential-department>${credentialDepartmentOptions(credential.departmentId || '')}</select></label>
+      <label><span class="label-text">Username</span><input data-credential-username value="${escapeAttr(credential.username || '')}" placeholder="email / user"></label>
+      <label><span class="label-text">Password</span><input data-credential-password type="password" placeholder="Để trống nếu không đổi"></label>
+      <button type="button" class="icon-danger credential-remove" data-remove-credential title="Xóa user">${svgIcon('trash')}</button>
+    </div>
+  `;
+}
+
+function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }) {
+  const credentials = entry.credentials?.length
+    ? entry.credentials
+    : [{ id: '', entryId: entry.id, departmentId: '', username: entry.username || '' }];
+  return credentials.map(credential => {
+    const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
+    const password = state.revealCache.get(credentialKey) || '************';
+    return `
+      <div class="credential-detail-item">
+        <div class="secret-row">
+          <span class="secret-icon">${svgIcon('user')}</span>
+          <div>
+            <small>${escapeHtml(departmentName(credential.departmentId) || 'Phòng ban')}</small>
+            <strong>${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+          </div>
+          ${canViewUsername && credential.username ? `<button class="ghost-btn" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
+        </div>
+        <div class="secret-row">
+          <span class="secret-icon">${svgIcon('key')}</span>
+          <div>
+            <small>Mật khẩu</small>
+            <strong class="password-text">${escapeHtml(password)}</strong>
+          </div>
+          ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
+          <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
+          <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function addEntryCredentialRow(credential = {}) {
+  const rows = $('#credentialRows');
+  if (!rows) return;
+  rows.insertAdjacentHTML('beforeend', credentialRowHtml({
+    departmentId: currentCredentialDepartmentId(),
+    ...credential
+  }));
+  const row = rows.lastElementChild;
+  row?.querySelector('[data-remove-credential]')?.addEventListener('click', () => {
+    row.remove();
+    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
+  });
+  row?.querySelector('[data-credential-username]')?.focus();
+}
+
+function collectEntryCredentials() {
+  return [...document.querySelectorAll('#credentialRows .credential-row')]
+    .map(row => {
+      const password = row.querySelector('[data-credential-password]')?.value || '';
+      const credential = {
+        id: row.dataset.credentialId || '',
+        departmentId: row.querySelector('[data-credential-department]')?.value || null,
+        username: row.querySelector('[data-credential-username]')?.value.trim() || ''
+      };
+      if (password || !credential.id) credential.password = password;
+      return credential;
+    })
+    .filter(credential => credential.username || credential.password || credential.id);
 }
 
 async function saveEntry(event) {
@@ -1528,6 +1622,9 @@ async function saveEntry(event) {
   data.typeId = data.typeId || firstCreatableEntryTypeId();
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
   data.status = 'Active';
+  data.credentials = collectEntryCredentials();
+  data.username = data.credentials[0]?.username || '';
+  if (data.credentials[0]?.password !== undefined) data.password = data.credentials[0].password;
   if (!data.password && id) delete data.password;
   try {
     await api(id ? `/api/entries/${id}` : '/api/entries', {
@@ -1543,24 +1640,35 @@ async function saveEntry(event) {
   await loadEntries();
 }
 
-async function revealPassword(id) {
+async function revealPassword(id, credentialId = '') {
   const entry = state.entries.find(item => String(item.id) === String(id));
   if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền xem mật khẩu');
-  const result = await api(`/api/entries/${id}/reveal-password`, { method: 'POST' });
-  state.revealCache.set(id, result.password);
+  const path = credentialId
+    ? credentialRevealPath(id, credentialId)
+    : `/api/entries/${id}/reveal-password`;
+  const result = await api(path, { method: 'POST' });
+  state.revealCache.set(credentialId ? `${id}:${credentialId}` : id, result.password);
   renderEntries();
 }
 
-async function copyPassword(id) {
+async function copyPassword(id, credentialId = '') {
   const entry = state.entries.find(item => String(item.id) === String(id));
   if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền copy mật khẩu');
-  let password = state.revealCache.get(id);
+  const cacheKey = credentialId ? `${id}:${credentialId}` : id;
+  let password = state.revealCache.get(cacheKey);
   if (!password) {
-    const result = await api(`/api/entries/${id}/reveal-password`, { method: 'POST' });
+    const path = credentialId
+      ? credentialRevealPath(id, credentialId)
+      : `/api/entries/${id}/reveal-password`;
+    const result = await api(path, { method: 'POST' });
     password = result.password || '';
   }
   await copyText(password);
   await api(`/api/entries/${id}/copy-password-log`, { method: 'POST' });
+}
+
+function credentialRevealPath(entryId, credentialId) {
+  return `/api/entries/${entryId}/credentials/${credentialId}/reveal-password`;
 }
 
 async function deleteEntry(id) {

@@ -263,11 +263,11 @@ test('entry actions use project-scoped permissions instead of global account per
 
 test('copying an allowed password does not reveal it in the UI', () => {
   const app = readFileSync('public/app.js', 'utf8');
-  const copyPassword = app.match(/async function copyPassword\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const copyPassword = app.match(/async function copyPassword\(id, credentialId = ''\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(copyPassword, /revealPassword\(id\)/);
   assert.doesNotMatch(copyPassword, /state\.revealCache\.set/);
-  assert.match(copyPassword, /\/api\/entries\/\$\{id\}\/reveal-password/);
+  assert.match(copyPassword, /credentialRevealPath\(id, credentialId\)/);
   assert.match(copyPassword, /copyText\(password/);
 });
 
@@ -365,6 +365,26 @@ test('system-based account flow treats account type as metadata', () => {
   assert.doesNotMatch(entryDialog, /name="status"/);
   assert.doesNotMatch(openEntryDialog, /form\.status\.value/);
   assert.match(saveEntry, /data\.status = 'Active'/);
+});
+
+test('account form manages department-scoped credentials', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveEntry = app.match(/async function saveEntry\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(entryDialog, /id="addCredentialBtn"/);
+  assert.match(entryDialog, /id="credentialRows"/);
+  assert.doesNotMatch(entryDialog, /<input name="username"/);
+  assert.doesNotMatch(entryDialog, /<input name="password"/);
+  assert.match(app, /function renderEntryCredentials/);
+  assert.match(app, /function collectEntryCredentials/);
+  assert.match(saveEntry, /data\.credentials = collectEntryCredentials\(\)/);
+  assert.match(renderDetail, /credentialDetailRows\(entry/);
+  assert.match(credentialDetailRows, /entry\.credentials/);
+  assert.match(app, /\/api\/entries\/\$\{entryId\}\/credentials\/\$\{credentialId\}\/reveal-password/);
 });
 
 test('project system dialog only edits one system and closes after save', () => {

@@ -47,3 +47,14 @@ test('Supabase departments migration stores dynamic user departments', () => {
   assert.match(sql, /add column if not exists department_id uuid/i);
   assert.match(sql, /departments admin access/i);
 });
+
+test('Supabase entry credentials migration stores department-scoped credentials', () => {
+  const sql = readFileSync('sql/011_entry_credentials.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.entry_credentials/i);
+  assert.match(sql, /entry_id uuid not null references public\.entries\(id\)/i);
+  assert.match(sql, /department_id uuid references public\.departments\(id\)/i);
+  assert.match(sql, /password_cipher jsonb not null/i);
+  assert.match(sql, /idx_entry_credentials_department_id/i);
+  assert.match(sql, /entry credentials admin access/i);
+});

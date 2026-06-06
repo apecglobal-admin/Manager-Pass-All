@@ -362,6 +362,107 @@ test('project members are authorized by project systems', async () => {
   }
 });
 
+test('project members only receive credentials for their department', async () => {
+  const repos = createMemoryRepos({
+    users: [{
+      id: 'user-admin',
+      username: 'admin@example.com',
+      displayName: 'Admin',
+      role: 'Admin',
+      status: 'Active',
+      permissions: ['users.manage'],
+      preferences: {}
+    }, {
+      id: 'user-sales',
+      username: 'sales@example.com',
+      displayName: 'Sales',
+      role: 'Viewer',
+      status: 'Active',
+      permissions: [],
+      authUserId: 'auth-sales',
+      departmentId: 'department-sales'
+    }],
+    departments: [
+      { id: 'department-sales', name: 'Sales', sortOrder: 1 },
+      { id: 'department-finance', name: 'Finance', sortOrder: 2 }
+    ],
+    projects: [{ id: 'project-apecspace', name: 'ApecSpace', status: 'Active' }],
+    systems: [{ id: 'system-web', projectId: 'project-apecspace', name: 'Website', status: 'Active' }],
+    memberships: [{ userId: 'user-sales', projectId: 'project-apecspace' }],
+    permissions: [{
+      userId: 'user-sales',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      canViewEntry: true,
+      canViewUrl: true,
+      canViewUsername: true,
+      canRevealPassword: true,
+      canViewNotes: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: false
+    }],
+    entries: [{
+      id: 'entry-web',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      typeId: 'type-web',
+      name: 'Website account',
+      username: 'legacy-admin',
+      url: 'https://web.example',
+      notes: '',
+      tags: [],
+      status: 'Active',
+      credentials: [
+        { id: 'credential-sales', entryId: 'entry-web', departmentId: 'department-sales', username: 'sales-user', password: 'sales-pass' },
+        { id: 'credential-finance', entryId: 'entry-web', departmentId: 'department-finance', username: 'finance-user', password: 'finance-pass' }
+      ]
+    }]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-sales',
+      authUserId: 'auth-sales',
+      email: 'sales@example.com',
+      name: 'Sales'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'sales-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const entries = await (await fetch(`${base}/api/projects/project-apecspace/entries`, {
+      headers: { cookie }
+    })).json();
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].username, 'sales-user');
+    assert.deepEqual(entries[0].credentials.map(credential => credential.username), ['sales-user']);
+
+    const allowedReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-sales/reveal-password`, {
+      method: 'POST',
+      headers: { cookie }
+    });
+    assert.equal(allowedReveal.status, 200);
+    assert.equal((await allowedReveal.json()).password, 'sales-pass');
+
+    const deniedReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-finance/reveal-password`, {
+      method: 'POST',
+      headers: { cookie }
+    });
+    assert.equal(deniedReveal.status, 403);
+  } finally {
+    await app.close();
+  }
+});
+
 test('admin can reorder projects and project systems', async () => {
   const repos = createMemoryRepos({
     projects: [
@@ -1347,6 +1448,7 @@ function createMemoryRepos(overrides = {}) {
           url: input.url || '',
           username: input.username || '',
           password: input.password || '',
+          credentials: input.credentials || [],
           passwordMasked: true,
           notes: input.notes || '',
           tags: input.tags || [],
