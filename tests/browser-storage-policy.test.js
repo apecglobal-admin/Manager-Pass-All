@@ -109,6 +109,8 @@ test('Google OAuth always prompts for account selection', () => {
 
   assert.match(app, /signInWithOAuth\(\{[\s\S]+provider:\s*'google'/);
   assert.match(app, /queryParams:\s*\{[\s\S]+prompt:\s*'select_account'/);
+  assert.match(app, /function resolveGoogleRedirectUrl\(\)/);
+  assert.match(app, /redirectTo:\s*resolveGoogleRedirectUrl\(\)/);
 });
 
 test('frontend exposes light mix and dark theme modes without Web Storage', () => {
@@ -528,6 +530,9 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.doesNotMatch(html, /id="detailResizeHandle"/);
   assert.match(renderProjects, /renderSystemSubmenu\(project\)/);
   assert.match(app, /function renderSystemSubmenu\(project\)/);
+  assert.match(renderProjects, /const wasExpanded = state\.expandedProjectIds\.has\(projectId\);/);
+  assert.match(renderProjects, /if \(wasSelected && wasExpanded\) \{/);
+  assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\);/);
   assert.match(renderSystemSubmenu, /data-system-filter="\$\{system\.id\}"/);
   assert.match(renderSystemSubmenu, /data-edit-system="\$\{system\.id\}"/);
   assert.match(renderSystemSubmenu, /data-delete-system="\$\{system\.id\}"/);

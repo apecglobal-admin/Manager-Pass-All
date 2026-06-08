@@ -508,13 +508,21 @@ async function loginWithGoogle() {
   const { error } = await state.supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin,
+      redirectTo: resolveGoogleRedirectUrl(),
       queryParams: {
         prompt: 'select_account'
       }
     }
   });
   if (error) $('#loginError').textContent = error.message;
+}
+
+function resolveGoogleRedirectUrl() {
+  const configured = String(runtimeConfig.appUrl || '').trim().replace(/\/$/, '');
+  if (configured) return configured;
+  const origin = String(window.location.origin || '').trim().replace(/\/$/, '');
+  if (/^https?:\/\//i.test(origin)) return origin;
+  return 'http://127.0.0.1:3000';
 }
 
 async function completeGoogleLogin() {
@@ -623,11 +631,19 @@ function renderProjects() {
     `).join('');
   document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async event => {
     if (event.target.closest('.item-menu-wrap')) return;
+    const projectId = String(item.dataset.id || '');
     state.view = 'vault';
-    if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
-    state.selectedProjectId = item.dataset.id;
+    const wasSelected = String(state.selectedProjectId) === projectId;
+    const wasExpanded = state.expandedProjectIds.has(projectId);
+    if (wasSelected && wasExpanded) {
+      state.expandedProjectIds.delete(projectId);
+      renderProjects();
+      return;
+    }
+    if (!wasSelected) state.selectedSystemId = null;
+    state.selectedProjectId = projectId;
     clearRevealCache();
-    state.expandedProjectIds.add(String(state.selectedProjectId));
+    state.expandedProjectIds.add(projectId);
     renderProjects();
     await loadEntries();
   }));
