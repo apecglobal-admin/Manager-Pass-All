@@ -1166,7 +1166,7 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
   font-size: 15px;
   font-weight: 900;
 }
-.reveal-countdown { color: var(--accent2); font-size: 12px; font-weight: 900; white-space: nowrap; }
+.reveal-countdown { margin-left: 8px; color: var(--accent2); font-size: 12px; font-weight: 900; white-space: nowrap; letter-spacing: 0; }
 .permission-grid { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
 .permission-grid label { display: flex; align-items: center; gap: 8px; color: var(--text2); }
 .permission-grid input { width: 15px; height: 15px; accent-color: var(--accent); }

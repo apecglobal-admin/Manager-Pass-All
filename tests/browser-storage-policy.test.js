@@ -286,6 +286,7 @@ test('entry actions use project-scoped permissions instead of global account per
   const renderHeader = app.match(/function renderHeader\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
   const deleteEntry = app.match(/async function deleteEntry\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const applyPermissionUi = app.match(/function applyPermissionUi\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(app, /can\('entries\.write'\)\s*\|\|\s*entry\.permissions\?\.canEdit/);
   assert.doesNotMatch(app, /can\('entries\.delete'\)\s*\|\|\s*entry\.permissions\?\.canDelete/);
@@ -293,6 +294,10 @@ test('entry actions use project-scoped permissions instead of global account per
   assert.doesNotMatch(renderHeader, /can\('entries\.write'\)/);
   assert.doesNotMatch(openEntryDialog, /can\('entries\.write'\)/);
   assert.doesNotMatch(deleteEntry, /can\('entries\.delete'\)/);
+  assert.doesNotMatch(renderHeader, /newEntryBtn'\)\.disabled/);
+  assert.match(renderHeader, /newEntryBtn'\)\?\.classList\.toggle\('hidden'/);
+  assert.doesNotMatch(applyPermissionUi, /npb\.disabled = !isAdmin\(\)/);
+  assert.match(applyPermissionUi, /npb\?\.classList\.toggle\('hidden', !isAdmin\(\)\)/);
   assert.match(renderHeader, /canCreateEntry/);
   assert.match(openEntryDialog, /canCreateEntry|entry\.permissions\?\.canEdit/);
   assert.match(deleteEntry, /entry\??\.permissions\?\.canDelete/);
@@ -325,6 +330,8 @@ test('revealed passwords show a 20 second countdown before masking again', () =>
   assert.match(revealPassword, /setRevealedPassword\(credentialId \? `\$\{id\}:\$\{credentialId\}` : id, result\.password\)/);
   assert.match(credentialDetailRows, /data-reveal-countdown/);
   assert.match(credentialDetailRows, /Ẩn sau \$\{revealSecondsRemaining\(revealState\)\}s/);
+  assert.match(credentialDetailRows, /<strong class="password-text">[\s\S]+?\$\{revealCountdown\}/);
+  assert.doesNotMatch(credentialDetailRows, /<span class="risk-badge">Nhạy cảm<\/span>\s*\$\{revealCountdown\}/);
 });
 
 test('accounts stay hidden while systems remain selectable', () => {

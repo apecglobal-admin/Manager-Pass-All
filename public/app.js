@@ -831,8 +831,10 @@ function renderHeader() {
   const project = currentProject();
   const system = currentSystem();
   const missingSystems = Boolean(project && !state.projectSystems.length);
-  $('#newEntryBtn').disabled = !project || missingSystems || !canCreateEntry();
-  $('#newEntryBtn').title = missingSystems
+  const canShowNewEntry = Boolean(project && !missingSystems && canCreateEntry());
+  $('#newEntryBtn')?.classList.toggle('hidden', !canShowNewEntry);
+  const newEntryButton = $('#newEntryBtn');
+  if (newEntryButton) newEntryButton.title = missingSystems
     ? 'Tạo hệ thống trước khi thêm account'
     : '';
   const title = $('#currentProjectName');
@@ -1632,9 +1634,9 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
           <div>
             <small>Mật khẩu</small>
             <strong class="password-text">${escapeHtml(password)}</strong>
+            ${revealCountdown}
           </div>
           ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-          ${revealCountdown}
           <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
           <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
         </div>
@@ -2020,7 +2022,7 @@ function isAdmin() {
 
 function applyPermissionUi() {
   $('#usersNavBtn')?.classList.toggle('hidden', !can('users.manage'));
-  const npb = $('#newProjectBtn'); if (npb) npb.disabled = !isAdmin();
+  const npb = $('#newProjectBtn'); npb?.classList.toggle('hidden', !isAdmin());
   const ib = $('#importBtn'); if (ib) ib.disabled = !isAdmin();
   const sjb = $('#saveJsonBtn'); if (sjb) sjb.disabled = !isAdmin();
   const ejb = $('#exportJsonBtn'); if (ejb) ejb.disabled = !isAdmin();
