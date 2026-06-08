@@ -905,11 +905,12 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   z-index: 4;
 }
 .project-chip .item-menu-wrap,
-.system-section-head .item-menu-wrap {
+.system-section-head .item-menu-wrap,
+.system-chip .item-menu-wrap {
   position: relative;
   top: auto;
   right: auto;
-  z-index: 5;
+  z-index: 20;
   flex: 0 0 auto;
   margin-left: auto;
 }
@@ -932,6 +933,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 }
 .account-action-menu {
   position: absolute;
+  z-index: 120;
+  isolation: isolate;
   top: calc(100% + 6px);
   right: 0;
   min-width: 112px;
@@ -940,8 +943,9 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   padding: 5px;
   border: 1px solid var(--line2);
   border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  box-shadow: 0 16px 32px rgba(2, 6, 23, .34);
+  background: var(--surface-panel-strong);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, .52);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
@@ -999,6 +1003,9 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   border-color: var(--line2);
   background: var(--bg-input);
   color: var(--text);
+}
+.item-menu-wrap.menu-open {
+  z-index: 130;
 }
 .item-menu-wrap.menu-open .account-action-menu {
   opacity: 1;

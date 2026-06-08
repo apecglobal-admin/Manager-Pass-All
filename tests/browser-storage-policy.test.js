@@ -493,8 +493,13 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.doesNotMatch(css, /\.system-account-card/);
   assert.doesNotMatch(css, /\.system-account-list/);
   assert.match(css, /\.account-action-menu[\s\S]+opacity:\s*0/);
+  assert.match(css, /\.account-action-menu[\s\S]+z-index:\s*120/);
+  assert.match(css, /\.account-action-menu[\s\S]+background:\s*var\(--surface-panel-strong\)/);
+  assert.match(css, /\.account-action-menu[\s\S]+isolation:\s*isolate/);
   assert.match(css, /\.account-action-menu button[\s\S]+justify-content:\s*flex-start/);
   assert.match(css, /\.item-menu-wrap\.menu-open \.account-action-menu/);
+  assert.match(css, /\.item-menu-wrap\.menu-open[\s\S]+z-index:\s*130/);
+  assert.match(css, /\.system-chip \.item-menu-wrap[\s\S]+position:\s*relative/);
   assert.match(css, /\.project-chip:hover \.account-more-btn/);
   assert.match(css, /\.system-chip:hover \.account-more-btn/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
