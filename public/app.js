@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function bindEvents() {
-  $('#loginForm').addEventListener('submit', login);
   $('#googleLoginBtn')?.addEventListener('click', loginWithGoogle);
   $('#lockBtn').addEventListener('click', logout);
   $('#usersNavBtn').addEventListener('click', showUsersPanel);
@@ -433,19 +432,6 @@ async function checkSession() {
   }
   if (await completeGoogleLogin()) return;
   showLogin();
-}
-
-async function login(event) {
-  event.preventDefault();
-  const data = Object.fromEntries(new FormData(event.target));
-  try {
-    const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(data) });
-    state.currentUser = result.user;
-    $('#loginError').textContent = '';
-    await enterApp();
-  } catch (error) {
-    $('#loginError').textContent = error.message;
-  }
 }
 
 async function logout() {
@@ -1438,7 +1424,7 @@ function renderProjectMemberOptions() {
   const selected = new Set(state.projectMemberDraft.map(member => String(member.userId)));
   const options = state.users
     .filter(user => user.role !== 'Admin' && !selected.has(String(user.id)))
-    .map(user => `<option value="${user.id}">${escapeHtml(user.displayName || user.username)} - ${escapeHtml(user.username)}</option>`)
+    .map(user => `<option value="${user.id}">${escapeHtml(user.displayName || user.username)} - ${escapeHtml(user.username)} - ${escapeHtml(userDepartmentText(user))}</option>`)
     .join('');
   select.innerHTML = options || '<option value="">Không còn user để thêm</option>';
   select.disabled = !options;
@@ -1454,6 +1440,7 @@ function renderProjectMemberList() {
       <div>
         <strong>${escapeHtml(member.displayName || member.username)}</strong>
         <small>${escapeHtml(member.username || '')} - ${escapeHtml(member.role || '')}</small>
+        <div class="department-chip-row">${userDepartmentChips(member)}</div>
       </div>
       <div class="user-actions">
         <button type="button" data-edit-member="${member.userId}">Quyền trong dự án</button>
@@ -1481,6 +1468,8 @@ function addSelectedProjectMember() {
     displayName: user.displayName,
     role: user.role,
     status: user.status,
+    departmentId: user.departmentId,
+    departmentIds: user.departmentIds || (user.departmentId ? [user.departmentId] : []),
     detailedPermissions: defaultProjectMemberPermissions()
   };
   state.projectMemberDraft.push(member);
@@ -2007,7 +1996,6 @@ function renderUsersPanel() {
         <p>${permissionSummary(user)}</p>
         <div class="user-actions">
           <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
-          ${['Invited', 'Expired'].includes(user.status) ? `<button data-invite-user="${user.id}">Gửi email mời</button>` : ''}
           ${Number(user.id) === Number(state.currentUser?.id) ? '' : `<button data-delete-user="${user.id}">Xóa</button>`}
         </div>
       </article>
@@ -2025,7 +2013,6 @@ function renderUsersPanel() {
         <p><span class="tag-dot"></span> Tài khoản nội bộ</p>
       </div>
       <div class="detail-actions">
-        <button id="addUserBtn" class="btn-accent">+ Thêm user</button>
         <button class="close-detail" title="Đóng">✕</button>
       </div>
     </header>
@@ -2041,19 +2028,14 @@ function renderUsersPanel() {
           <p>${permissionSummary(user)}</p>
           <div class="user-actions">
             <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
-            ${['Invited', 'Expired'].includes(user.status) ? `<button data-invite-user="${user.id}">Gửi email mời</button>` : ''}
             ${Number(user.id) === Number(state.currentUser?.id) ? '' : `<button data-delete-user="${user.id}">Xóa</button>`}
           </div>
         </article>
       `).join('')}
     </section>
   `;
-  $('#addUserBtn').addEventListener('click', () => openUserDialog());
   document.querySelectorAll('[data-edit-user]').forEach(button => {
     button.addEventListener('click', () => openUserDialog(state.users.find(user => String(user.id) === String(button.dataset.editUser))));
-  });
-  document.querySelectorAll('[data-invite-user]').forEach(button => {
-    button.addEventListener('click', () => resendUserInvite(button.dataset.inviteUser));
   });
   document.querySelectorAll('[data-delete-user]').forEach(button => {
     button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
@@ -2061,12 +2043,8 @@ function renderUsersPanel() {
 }
 
 function bindUserManagementActions() {
-  $('#addUserBtn')?.addEventListener('click', () => openUserDialog());
   document.querySelectorAll('#userManagementDialog [data-edit-user]').forEach(button => {
     button.addEventListener('click', () => openUserDialog(state.users.find(user => String(user.id) === String(button.dataset.editUser))));
-  });
-  document.querySelectorAll('#userManagementDialog [data-invite-user]').forEach(button => {
-    button.addEventListener('click', () => resendUserInvite(button.dataset.inviteUser));
   });
   document.querySelectorAll('#userManagementDialog [data-delete-user]').forEach(button => {
     button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
@@ -2086,27 +2064,23 @@ function permissionSummary(user) {
 }
 
 function openUserDialog(user = {}) {
+  if (!user.id) {
+    toast('User chỉ được tạo từ đăng nhập Google');
+    return;
+  }
   const form = $('#userForm');
-  const creating = !user.id;
-  const passwordField = form.password.closest('label');
-  const statusField = form.status.closest('label');
   const inviteHint = $('#userInviteHint');
   const saveButton = $('#saveUserBtn');
-  form.id.value = user.id || '';
+  form.id.value = user.id;
   form.username.value = user.username || '';
-  form.username.disabled = Boolean(user.id);
+  form.username.disabled = true;
   form.displayName.value = user.displayName || '';
   fillDepartmentOptions(user.departmentIds || (user.departmentId ? [user.departmentId] : []));
-  form.password.value = '';
-  form.password.required = false;
-  passwordField?.classList.toggle('hidden', creating);
-  statusField?.classList.toggle('hidden', creating);
   if (inviteHint) {
-    if (creating) inviteHint.textContent = 'Nhập email Google của user. Khi lưu, hệ thống sẽ tạo tài khoản nội bộ và gửi email mời tải app.';
-    else if (user.status === 'Pending') inviteHint.textContent = 'Tài khoản Google này đang yêu cầu tham gia. Chuyển trạng thái sang Active và cấp quyền; hệ thống sẽ gửi email thông báo nếu đã cấu hình mail.';
+    if (user.status === 'Pending') inviteHint.textContent = 'Tài khoản Google này đang yêu cầu tham gia. Chuyển trạng thái sang Active và cấp quyền; hệ thống sẽ gửi email thông báo nếu đã cấu hình mail.';
     else inviteHint.textContent = 'Email đăng nhập là định danh dùng để map Google vào quyền nội bộ.';
   }
-  if (saveButton) saveButton.textContent = creating ? 'Tạo user & gửi email mời' : (user.status === 'Pending' ? 'Duyệt và cấp quyền' : 'Lưu thay đổi');
+  if (saveButton) saveButton.textContent = user.status === 'Pending' ? 'Duyệt và cấp quyền' : 'Lưu thay đổi';
   if (user.status === 'Pending') form.status.value = 'Active';
   else form.status.value = user.status || 'Invited';
   form.role.value = user.role || 'Viewer';
@@ -2115,16 +2089,23 @@ function openUserDialog(user = {}) {
   syncUserDepartmentVisibility();
   hideDepartmentQuickAdd();
   $('#userDialog').showModal();
-  focusDialogField('#userDialog', user.id ? 'input[name="displayName"]' : 'input[name="username"]');
+  focusDialogField('#userDialog', 'input[name="displayName"]');
 }
 
 function departmentName(id) {
   return state.departments.find(department => String(department.id) === String(id))?.name || 'Phòng ban';
 }
 
+function userDepartmentText(user = {}) {
+  const ids = user.departmentIds?.length ? user.departmentIds : (user.departmentId ? [user.departmentId] : []);
+  return ids.length ? ids.map(id => departmentName(id)).join(', ') : 'Chưa phân phòng ban';
+}
+
 function userDepartmentChips(user = {}) {
   const ids = user.departmentIds?.length ? user.departmentIds : (user.departmentId ? [user.departmentId] : []);
-  return ids.map(id => `<span class="department-chip">${escapeHtml(departmentName(id))}</span>`).join('');
+  return ids.length
+    ? ids.map(id => `<span class="department-chip">${escapeHtml(departmentName(id))}</span>`).join('')
+    : '<span class="department-chip muted">Chưa phân phòng ban</span>';
 }
 
 function fillDepartmentOptions(selectedIds = selectedUserDepartmentIds()) {
@@ -2391,18 +2372,19 @@ async function saveUser(event) {
   const form = event.target;
   const formData = new FormData(form);
   const id = formData.get('id');
+  if (!id) {
+    toast('User chỉ được tạo từ đăng nhập Google');
+    return;
+  }
   const payload = {
-    username: form.username.value.trim(),
     displayName: form.displayName.value.trim(),
-    password: form.password.value,
     departmentIds: form.role.value === 'Admin' ? [] : selectedUserDepartmentIds(),
     role: form.role.value,
     status: form.status.value,
     permissions: formData.getAll('permissions')
   };
-  if (!payload.password) delete payload.password;
-  const result = await api(id ? `/api/users/${id}` : '/api/users', {
-    method: id ? 'PATCH' : 'POST',
+  const result = await api(`/api/users/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload)
   });
   $('#userDialog').close();
@@ -2410,15 +2392,6 @@ async function saveUser(event) {
   else if (result.approvalEmailRequired) toast('Đã duyệt. Email thông báo chưa được cấu hình');
   else toast('Đã lưu người dùng');
   await showUsersPanel();
-}
-
-async function resendUserInvite(id) {
-  try {
-    const result = await api(`/api/users/${id}/invite`, { method: 'POST' });
-    toast(result.inviteSent ? 'Đã gửi email mời tải app' : 'Email mời chưa được cấu hình');
-  } catch (error) {
-    toast(error.message);
-  }
 }
 
 async function deleteUser(id) {

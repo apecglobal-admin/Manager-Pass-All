@@ -35,13 +35,10 @@ await fetch('http://127.0.0.1:3000/api/projects', {
 Node.js hoac backend khac:
 
 ```js
-const loginRes = await fetch('http://127.0.0.1:3000/api/auth/login', {
+const loginRes = await fetch('http://127.0.0.1:3000/api/auth/google', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    username: 'admin@example.com',
-    password: 'admin-pass'
-  })
+  body: JSON.stringify({ accessToken: 'supabase-access-token' })
 });
 
 const cookie = loginRes.headers.get('set-cookie')?.split(';')[0];
@@ -68,6 +65,7 @@ Status hay gap:
 | `400` | Body sai, thieu field, hoac loi xu ly |
 | `401` | Chua login hoac session het han |
 | `403` | Khong co quyen |
+| `410` | Endpoint cu da tat |
 | `404` | Khong tim thay resource |
 | `503` | Dich vu auth/invite chua duoc cau hinh |
 
@@ -75,14 +73,25 @@ Status hay gap:
 
 ### POST `/api/auth/login`
 
-Dang nhap bang email/password Supabase.
+Endpoint email/password da tat. Dung Google login thay the.
+
+Response `410`:
+
+```json
+{
+  "error": "Username/password login is disabled. Use Google login."
+}
+```
+
+### POST `/api/auth/google`
+
+Dang nhap bang Supabase access token da lay tu Google/Supabase Auth.
 
 Request:
 
 ```json
 {
-  "username": "admin@example.com",
-  "password": "admin-pass"
+  "accessToken": "supabase-access-token"
 }
 ```
 
@@ -102,20 +111,6 @@ Response `200`:
 ```
 
 Response co header `Set-Cookie: session=...`.
-
-### POST `/api/auth/google`
-
-Dang nhap bang Supabase access token da lay tu Google/Supabase Auth.
-
-Request:
-
-```json
-{
-  "accessToken": "supabase-access-token"
-}
-```
-
-Response `200`: giong `/api/auth/login`, co `Set-Cookie`.
 
 Neu tai khoan chua duoc admin phe duyet, API tra `403`:
 
@@ -606,13 +601,10 @@ Request:
 ```js
 const baseUrl = 'http://127.0.0.1:3000';
 
-const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+const loginRes = await fetch(`${baseUrl}/api/auth/google`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    username: 'admin@example.com',
-    password: 'admin-pass'
-  })
+  body: JSON.stringify({ accessToken: 'supabase-access-token' })
 });
 
 if (!loginRes.ok) {

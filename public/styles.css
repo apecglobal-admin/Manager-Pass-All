@@ -1161,7 +1161,7 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .credential-detail-item { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .credential-detail-item:last-child { padding-bottom: 0; border-bottom: 0; }
 .credential-department-title {
-  padding: 0 12px 2px;
+  padding: 10px 12px 4px;
   color: var(--text);
   font-size: 15px;
   font-weight: 900;

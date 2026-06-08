@@ -11,14 +11,20 @@ test('browser code does not persist application data in cookies or Web Storage',
   assert.match(supabaseClient, /persistSession:\s*false/);
 });
 
-test('login form does not ship with default admin credentials', () => {
+test('login form only exposes Google authentication', () => {
   const html = readFileSync('public/index.html', 'utf8');
+  const app = readFileSync('public/app.js', 'utf8');
   const loginForm = html.match(/<form id="loginForm"[\s\S]+?<\/form>/)?.[0] || '';
 
   assert.doesNotMatch(loginForm, /value="admin"/);
   assert.doesNotMatch(loginForm, /admin123/);
-  assert.match(loginForm, /autocomplete="username"/);
-  assert.match(loginForm, /autocomplete="current-password"/);
+  assert.doesNotMatch(loginForm, /name="username"/);
+  assert.doesNotMatch(loginForm, /name="password"/);
+  assert.doesNotMatch(loginForm, /autocomplete="username"/);
+  assert.doesNotMatch(loginForm, /autocomplete="current-password"/);
+  assert.doesNotMatch(loginForm, /type="submit"/);
+  assert.match(loginForm, /id="googleLoginBtn"/);
+  assert.doesNotMatch(app, /loginForm'\)\.addEventListener\('submit', login\)/);
 });
 
 test('frontend data CRUD goes through API endpoints instead of direct Supabase table writes', () => {
@@ -68,7 +74,9 @@ test('user management UI exposes pending Google access requests for admin approv
   assert.match(userDialog, /id="selectedDepartmentLabels"/);
   assert.match(userDialog, /id="departmentQuickAdd"/);
   assert.match(userManagementDialog, /id="userManagementList"/);
-  assert.match(userManagementDialog, /id="addUserBtn"/);
+  assert.doesNotMatch(userManagementDialog, /id="addUserBtn"/);
+  assert.doesNotMatch(userDialog, /name="password"/);
+  assert.match(userDialog, /name="username"[^>]+disabled/);
   assert.match(showUsersPanel, /userManagementDialog'\)\.showModal\(\)/);
   assert.doesNotMatch(showUsersPanel, /state\.view = 'users'/);
   assert.doesNotMatch(renderDetail, /renderUsersPanel/);
@@ -90,7 +98,10 @@ test('user management UI exposes pending Google access requests for admin approv
   assert.match(css, /\.department-native-select/);
   assert.doesNotMatch(css, /\.department-field select\[multiple\] \{ min-height: 96px;/);
   assert.match(app, /user\.status === 'Pending'[\s\S]+form\.status\.value = 'Active'/);
-  assert.match(app, /\['Invited', 'Expired'\]\.includes\(user\.status\)[\s\S]+data-invite-user/);
+  assert.doesNotMatch(app, /openUserDialog\(\)/);
+  assert.doesNotMatch(app, /data-invite-user/);
+  assert.doesNotMatch(app, /resendUserInvite/);
+  assert.doesNotMatch(app, /payload\.password|form\.password|username:\s*form\.username/);
 });
 
 test('Google OAuth always prompts for account selection', () => {
@@ -192,13 +203,17 @@ test('project members are saved from the member permission dialog', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const addMember = app.match(/function addSelectedProjectMember\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderOptions = app.match(/function renderProjectMemberOptions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderList = app.match(/function renderProjectMemberList\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const savePermissions = app.match(/async function saveMemberPermissionDraft\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
   const removeMember = app.match(/async function removeProjectMember\(userId\) \{[\s\S]+?\n\}/)?.[0] || '';
   const persistMembers = app.match(/async function persistProjectMembers\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(addMember, /openMemberPermissionDialog\(member\.userId\)/);
   assert.match(addMember, /defaultProjectMemberPermissions\(\)/);
+  assert.match(addMember, /departmentIds:\s*user\.departmentIds/);
   assert.match(renderOptions, /user\.role !== 'Admin'/);
+  assert.match(renderOptions, /userDepartmentText\(user\)/);
+  assert.match(renderList, /userDepartmentChips\(member\)/);
   assert.match(savePermissions, /persistProjectMembers\(\)/);
   assert.match(removeMember, /persistProjectMembers\(\)/);
   assert.match(persistMembers, /api\(`\/api\/projects\/\$\{projectId\}\/members`/);

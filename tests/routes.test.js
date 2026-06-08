@@ -100,19 +100,12 @@ test('Supabase login, create project, create entry, and reveal password through 
   }
 });
 
-test('password login uses Supabase Auth and creates app session', async () => {
+test('password login endpoint is disabled in Google-only mode', async () => {
   const app = createApp({
     repos: createMemoryRepos(),
     verifyGoogleAccessToken: null,
-    authenticateWithPassword: async ({ username, password }) => {
-      assert.equal(username, 'admin@example.com');
-      assert.equal(password, 'admin-pass');
-      return {
-        accessToken: 'password-session-token',
-        authUserId: 'auth-admin',
-        email: 'admin@example.com',
-        name: 'Admin'
-      };
+    authenticateWithPassword: async () => {
+      throw new Error('password auth should not be called');
     }
   });
   const server = await app.listen(0);
@@ -126,9 +119,9 @@ test('password login uses Supabase Auth and creates app session', async () => {
     });
     const body = await login.json();
 
-    assert.equal(login.status, 200);
-    assert.equal(body.user.username, 'admin@example.com');
-    assert.equal(login.headers.get('set-cookie').includes('session='), true);
+    assert.equal(login.status, 410);
+    assert.equal(body.error, 'Username/password login is disabled. Use Google login.');
+    assert.equal(login.headers.get('set-cookie'), null);
   } finally {
     await app.close();
   }
@@ -157,10 +150,11 @@ test('server allows Capacitor Android WebView origin for API requests', async ()
   }
 });
 
-test('Capacitor origin login receives a cross-site compatible session cookie', async () => {
+test('Capacitor origin Google login receives a cross-site compatible session cookie', async () => {
   const app = createApp({
     repos: createMemoryRepos(),
-    authenticateWithPassword: async () => ({
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
       email: 'admin@example.com',
       authUserId: 'auth-admin',
       accessToken: 'token-admin'
@@ -170,13 +164,13 @@ test('Capacitor origin login receives a cross-site compatible session cookie', a
   const base = `http://127.0.0.1:${server.address().port}`;
 
   try {
-    const response = await fetch(`${base}/api/auth/login`, {
+    const response = await fetch(`${base}/api/auth/google`, {
       method: 'POST',
       headers: {
         origin: 'https://localhost',
         'content-type': 'application/json'
       },
-      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+      body: JSON.stringify({ accessToken: 'token-admin' })
     });
 
     const cookie = response.headers.get('set-cookie');
@@ -188,10 +182,11 @@ test('Capacitor origin login receives a cross-site compatible session cookie', a
   }
 });
 
-test('127.0.0.1 local origin login keeps a same-site development cookie', async () => {
+test('127.0.0.1 local origin Google login keeps a same-site development cookie', async () => {
   const app = createApp({
     repos: createMemoryRepos(),
-    authenticateWithPassword: async () => ({
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
       email: 'admin@example.com',
       authUserId: 'auth-admin',
       accessToken: 'token-admin'
@@ -202,13 +197,13 @@ test('127.0.0.1 local origin login keeps a same-site development cookie', async 
   const base = `http://127.0.0.1:${port}`;
 
   try {
-    const response = await fetch(`${base}/api/auth/login`, {
+    const response = await fetch(`${base}/api/auth/google`, {
       method: 'POST',
       headers: {
         origin: `http://127.0.0.1:${port}`,
         'content-type': 'application/json'
       },
-      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+      body: JSON.stringify({ accessToken: 'token-admin' })
     });
 
     const cookie = response.headers.get('set-cookie');
@@ -843,14 +838,15 @@ test('signed session cookie survives app restart', async () => {
 
 test('stateless session cookie survives serverless handler restart', async () => {
   const repos = createMemoryRepos();
-  const authenticateWithPassword = async () => ({
+  const verifyGoogleAccessToken = async () => ({
+    id: 'auth-admin',
     email: 'admin@example.com',
     authUserId: 'auth-admin',
     accessToken: 'token-admin'
   });
   const first = createApp({
     repos,
-    authenticateWithPassword,
+    verifyGoogleAccessToken,
     statelessSessions: true,
     sessionStore: null
   });
@@ -859,10 +855,10 @@ test('stateless session cookie survives serverless handler restart', async () =>
   let cookie;
 
   try {
-    const login = await fetch(`${firstBase}/api/auth/login`, {
+    const login = await fetch(`${firstBase}/api/auth/google`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+      body: JSON.stringify({ accessToken: 'token-admin' })
     });
     cookie = login.headers.get('set-cookie').split(';')[0];
     assert.equal(login.status, 200);
@@ -872,7 +868,7 @@ test('stateless session cookie survives serverless handler restart', async () =>
 
   const restarted = createApp({
     repos,
-    authenticateWithPassword,
+    verifyGoogleAccessToken,
     statelessSessions: true,
     sessionStore: null
   });
@@ -966,7 +962,8 @@ test('current user theme preferences persist in session', async () => {
   const repos = createMemoryRepos();
   const app = createApp({
     repos,
-    authenticateWithPassword: async () => ({
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
       email: 'admin@example.com',
       authUserId: 'auth-admin',
       accessToken: 'token-admin'
@@ -976,10 +973,10 @@ test('current user theme preferences persist in session', async () => {
   const base = `http://127.0.0.1:${server.address().port}`;
 
   try {
-    const login = await fetch(`${base}/api/auth/login`, {
+    const login = await fetch(`${base}/api/auth/google`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin@example.com', password: 'pw' })
+      body: JSON.stringify({ accessToken: 'token-admin' })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const saved = await fetch(`${base}/api/me/preferences`, {
@@ -1154,7 +1151,7 @@ test('Google access request uses Supabase user token scoped repositories', async
   }
 });
 
-test('admin creates departments and assigns one while approving a pending user', async () => {
+test('admin creates departments and assigns multiple while approving a pending Google user', async () => {
   const repos = createMemoryRepos({
     users: [
       {
@@ -1202,6 +1199,12 @@ test('admin creates departments and assigns one while approving a pending user',
       body: JSON.stringify({ name: 'Kinh doanh' })
     });
     const department = await created.json();
+    const createdSecond = await fetch(`${base}/api/departments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Công nghệ' })
+    });
+    const secondDepartment = await createdSecond.json();
     const approved = await fetch(`${base}/api/users/user-pending`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', cookie },
@@ -1210,16 +1213,18 @@ test('admin creates departments and assigns one while approving a pending user',
         role: 'Viewer',
         status: 'Active',
         permissions: [],
-        departmentId: department.id
+        departmentIds: [department.id, secondDepartment.id]
       })
     });
     const body = await approved.json();
 
     assert.equal(created.status, 201);
+    assert.equal(createdSecond.status, 201);
     assert.equal(department.name, 'Kinh doanh');
     assert.equal(approved.status, 200);
     assert.equal(body.user.status, 'Active');
     assert.equal(body.user.departmentId, department.id);
+    assert.deepEqual(body.user.departmentIds, [department.id, secondDepartment.id]);
   } finally {
     await app.close();
   }

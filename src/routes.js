@@ -18,7 +18,6 @@ export function createRouter(baseRepos, options = {}) {
   });
   const sessionSecret = String(options.sessionSecret || process.env.APP_SECRET || 'apecglobal-manager-local-development-secret');
   const sessionMaxAgeSeconds = Number(options.sessionMaxAgeSeconds || DEFAULT_SESSION_MAX_AGE_SECONDS);
-  const authenticateWithPassword = options.authenticateWithPassword;
   const verifyGoogleAccessToken = options.verifyGoogleAccessToken;
   const inviteUserByEmail = options.inviteUserByEmail;
   const notifyUserApproved = options.notifyUserApproved;
@@ -528,51 +527,7 @@ export function createRouter(baseRepos, options = {}) {
 
       try {
       if (req.method === 'POST' && path === '/api/auth/login') {
-        if (!authenticateWithPassword) {
-          return sendJson(res, 503, { error: 'Supabase password login is not configured' });
-        }
-        const body = await readJson(req);
-        if (!body.username || !body.password) {
-          return sendJson(res, 400, { error: 'Username and password are required' });
-        }
-
-        let verified;
-        try {
-          verified = await authenticateWithPassword({
-            username: body.username,
-            password: body.password
-          });
-        } catch (error) {
-          return sendJson(res, 401, { error: error.message || 'Invalid username or password' });
-        }
-
-        const email = String(verified?.email || '').trim();
-        if (!email) return sendJson(res, 401, { error: 'Supabase account has no email' });
-        useAccessToken(verified.accessToken);
-
-        let user;
-        try {
-          user = await repos.users.activateForGoogleLogin(email, {
-            authUserId: verified.authUserId || verified.id,
-            displayName: verified?.name || verified?.displayName || email
-          });
-        } catch (error) {
-          return sendJson(res, 403, { error: error.message });
-        }
-        if (!user) {
-          const requested = await repos.users.requestGoogleAccess({
-            username: email,
-            authUserId: verified.authUserId || verified.id,
-            displayName: verified?.name || verified?.displayName || email
-          });
-          await repos.activity.log('user.access_request', { details: requested.username });
-          if (requested.status === 'Active') {
-            return createSession(requested, req, res, { accessToken: verified.accessToken, supabase: verified });
-          }
-          return sendJson(res, 403, { error: 'Tai khoan dang cho admin phe duyet' });
-        }
-
-        return createSession(user, req, res, { accessToken: verified.accessToken, supabase: verified });
+        return sendJson(res, 410, { error: 'Username/password login is disabled. Use Google login.' });
       }
 
       if (req.method === 'POST' && path === '/api/auth/google') {
