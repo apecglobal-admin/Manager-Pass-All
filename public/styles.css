@@ -1116,8 +1116,19 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
 .department-field { display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; align-items: end; }
-.department-field select[multiple] { min-height: 96px; padding: 8px; }
-.department-field button { height: 40px; padding: 0; font-size: 18px; }
+.department-picker { position: relative; display: grid; gap: 6px; min-width: 0; }
+.department-native-select { display: none; }
+.department-dropdown-trigger { width: 100%; height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; color: var(--text); background: var(--bg-input); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 13px; font-weight: 800; text-align: left; }
+.department-dropdown-trigger::after { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--text3); border-bottom: 2px solid var(--text3); transform: rotate(45deg); margin-top: -4px; flex: 0 0 auto; }
+.department-dropdown-trigger[aria-expanded="true"] { border-color: rgba(45, 212, 191, .8); box-shadow: 0 0 0 3px rgba(45, 212, 191, .12); }
+.department-dropdown-menu { position: absolute; z-index: 80; top: calc(100% + 6px); left: 0; right: 0; max-height: 220px; overflow: auto; display: grid; gap: 4px; padding: 6px; background: var(--surface-panel-strong); border: 1px solid var(--line); border-radius: var(--r-sm); box-shadow: var(--shadow-lg); }
+.department-dropdown-option { width: 100%; min-height: 34px; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 8px; padding: 7px 9px; color: var(--text2); background: transparent; border: 0; border-radius: var(--r-xs); font-size: 13px; font-weight: 800; text-align: left; }
+.department-dropdown-option:hover,
+.department-dropdown-option.is-selected { color: var(--text); background: rgba(45, 212, 191, .1); }
+.department-option-check { width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-input); }
+.department-dropdown-option.is-selected .department-option-check { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .16); }
+.department-dropdown-empty { padding: 10px; color: var(--text3); font-size: 12px; font-weight: 700; }
+.department-field > button { height: 40px; padding: 0; font-size: 18px; }
 .selected-department-labels { min-height: 28px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: -2px; }
 .selected-department-label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--accent-light); background: var(--accent-dim); border: 1px solid rgba(124, 58, 237, .22); border-radius: var(--r-pill); padding: 4px 8px; font-size: 11px; font-weight: 900; line-height: 1; }
 .selected-department-label button { width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border-radius: var(--r-pill); color: var(--text2); background: rgba(15, 23, 42, .42); border: 1px solid rgba(148, 163, 184, .18); font-size: 13px; line-height: 1; }

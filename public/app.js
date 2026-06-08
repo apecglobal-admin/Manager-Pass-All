@@ -90,6 +90,8 @@ function bindEvents() {
     syncUserDepartmentVisibility();
   });
   $('#userDepartmentSelect')?.addEventListener('change', renderSelectedDepartmentLabels);
+  $('#userDepartmentDropdownBtn')?.addEventListener('click', toggleDepartmentDropdown);
+  $('#userDepartmentDropdown')?.addEventListener('click', toggleDepartmentOption);
   $('#selectedDepartmentLabels')?.addEventListener('click', removeSelectedDepartmentLabel);
   $('#toggleDepartmentQuickAddBtn')?.addEventListener('click', toggleDepartmentQuickAdd);
   $('#saveDepartmentQuickAddBtn')?.addEventListener('click', saveDepartmentQuickAdd);
@@ -110,6 +112,7 @@ function bindEvents() {
       closeThemeMenu();
       closeMixColorPopover();
     }
+    if (!event.target.closest('.department-picker')) closeDepartmentDropdown();
     if (!event.target.closest('.item-menu-wrap')) closeItemMenus();
   });
   bindPanelResizeActions();
@@ -2081,6 +2084,7 @@ function fillDepartmentOptions(selectedIds = selectedUserDepartmentIds()) {
   [...select.options].forEach(option => {
     option.selected = selected.has(String(option.value));
   });
+  renderDepartmentDropdown();
   renderSelectedDepartmentLabels();
 }
 
@@ -2088,6 +2092,74 @@ function selectedUserDepartmentIds() {
   const select = $('#userDepartmentSelect');
   if (!select) return [];
   return [...select.selectedOptions].map(option => option.value).filter(Boolean);
+}
+
+function setSelectedDepartmentIds(ids) {
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  const selected = new Set((ids || []).map(id => String(id || '')).filter(Boolean));
+  [...select.options].forEach(option => {
+    option.selected = selected.has(String(option.value));
+  });
+}
+
+function renderDepartmentDropdown() {
+  const menu = $('#userDepartmentDropdown');
+  if (!menu) return;
+  const selected = new Set(selectedUserDepartmentIds().map(id => String(id)));
+  menu.innerHTML = state.departments.length
+    ? state.departments.map(department => {
+      const id = String(department.id);
+      const checked = selected.has(id);
+      return `
+        <button type="button" class="department-dropdown-option${checked ? ' is-selected' : ''}" data-toggle-user-department="${escapeAttr(id)}" role="menuitemcheckbox" aria-checked="${checked ? 'true' : 'false'}">
+          <span class="department-option-check" aria-hidden="true"></span>
+          <span>${escapeHtml(department.name)}</span>
+        </button>
+      `;
+    }).join('')
+    : '<div class="department-dropdown-empty">Chưa có phòng ban</div>';
+  syncDepartmentDropdownButton();
+}
+
+function toggleDepartmentDropdown(event) {
+  event?.stopPropagation();
+  const menu = $('#userDepartmentDropdown');
+  const button = $('#userDepartmentDropdownBtn');
+  if (!menu || !button) return;
+  renderDepartmentDropdown();
+  const willOpen = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !willOpen);
+  button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
+function closeDepartmentDropdown() {
+  $('#userDepartmentDropdown')?.classList.add('hidden');
+  $('#userDepartmentDropdownBtn')?.setAttribute('aria-expanded', 'false');
+}
+
+function toggleDepartmentOption(event) {
+  event.stopPropagation();
+  const optionButton = event.target?.closest?.('[data-toggle-user-department]');
+  if (!optionButton) return;
+  const id = optionButton.dataset.toggleUserDepartment;
+  const selected = new Set(selectedUserDepartmentIds().map(item => String(item)));
+  if (selected.has(String(id))) selected.delete(String(id));
+  else selected.add(String(id));
+  setSelectedDepartmentIds([...selected]);
+  renderDepartmentDropdown();
+  renderSelectedDepartmentLabels();
+}
+
+function syncDepartmentDropdownButton() {
+  const button = $('#userDepartmentDropdownBtn');
+  if (!button) return;
+  const ids = selectedUserDepartmentIds();
+  if (!ids.length) {
+    button.textContent = 'Chọn phòng ban';
+    return;
+  }
+  button.textContent = ids.length === 1 ? departmentName(ids[0]) : `${ids.length} phòng ban đã chọn`;
 }
 
 function renderSelectedDepartmentLabels() {
@@ -2102,6 +2174,7 @@ function renderSelectedDepartmentLabels() {
       </span>
     `).join('')
     : '<span class="selected-department-empty">Chưa phân phòng ban</span>';
+  syncDepartmentDropdownButton();
 }
 
 function removeSelectedDepartmentLabel(event) {
@@ -2112,12 +2185,13 @@ function removeSelectedDepartmentLabel(event) {
   [...select.options].forEach(option => {
     if (String(option.value) === String(id)) option.selected = false;
   });
+  renderDepartmentDropdown();
   renderSelectedDepartmentLabels();
 }
 
 function syncUserDepartmentVisibility() {
   const form = $('#userForm');
-  const departmentField = $('#userDepartmentSelect')?.closest('.department-field');
+  const departmentField = $('#userDepartmentDropdownBtn')?.closest('.department-field');
   const departmentLabels = $('#selectedDepartmentLabels');
   const isAdminRole = form?.role?.value === 'Admin';
   departmentField?.classList.toggle('hidden', Boolean(isAdminRole));
@@ -2125,6 +2199,7 @@ function syncUserDepartmentVisibility() {
   $('#toggleDepartmentQuickAddBtn')?.toggleAttribute('disabled', Boolean(isAdminRole));
   if (isAdminRole) {
     fillDepartmentOptions([]);
+    closeDepartmentDropdown();
     hideDepartmentQuickAdd();
   }
 }

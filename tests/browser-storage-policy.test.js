@@ -61,6 +61,9 @@ test('user management UI exposes pending Google access requests for admin approv
   assert.match(html, /<option>Pending<\/option>/);
   assert.match(userDialog, /name="departmentIds"/);
   assert.match(userDialog, /multiple/);
+  assert.match(userDialog, /id="userDepartmentDropdownBtn"/);
+  assert.match(userDialog, /id="userDepartmentDropdown"/);
+  assert.match(userDialog, /class="department-native-select"/);
   assert.doesNotMatch(userDialog, /<option value="">Chưa phân phòng ban<\/option>/);
   assert.match(userDialog, /id="selectedDepartmentLabels"/);
   assert.match(userDialog, /id="departmentQuickAdd"/);
@@ -77,9 +80,15 @@ test('user management UI exposes pending Google access requests for admin approv
   assert.match(app, /api\('\/api\/departments',\s*\{/);
   assert.match(app, /departmentIds:\s*form\.role\.value === 'Admin' \? \[\] : selectedUserDepartmentIds\(\)/);
   assert.match(app, /function renderSelectedDepartmentLabels/);
+  assert.match(app, /function renderDepartmentDropdown/);
+  assert.match(app, /data-toggle-user-department/);
   assert.match(app, /data-remove-user-department/);
+  assert.match(app, /function toggleDepartmentDropdown/);
   assert.match(app, /function syncUserDepartmentVisibility/);
   assert.match(css, /\.selected-department-labels/);
+  assert.match(css, /\.department-dropdown-menu/);
+  assert.match(css, /\.department-native-select/);
+  assert.doesNotMatch(css, /\.department-field select\[multiple\] \{ min-height: 96px;/);
   assert.match(app, /user\.status === 'Pending'[\s\S]+form\.status\.value = 'Active'/);
   assert.match(app, /\['Invited', 'Expired'\]\.includes\(user\.status\)[\s\S]+data-invite-user/);
 });
