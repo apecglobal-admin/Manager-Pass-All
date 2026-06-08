@@ -618,7 +618,6 @@ export function createRouter(baseRepos, options = {}) {
       }
 
       if (req.method === 'GET' && path === '/api/departments') {
-        if (!await requirePermission(req, res, 'users.manage')) return true;
         return sendJson(res, 200, await repos.departments.list());
       }
 

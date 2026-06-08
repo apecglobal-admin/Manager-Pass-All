@@ -467,6 +467,54 @@ test('project members only receive credentials for their department', async () =
   }
 });
 
+test('project members can list department names for credential titles', async () => {
+  const repos = createMemoryRepos({
+    users: [{
+      id: 'user-member',
+      username: 'member@example.com',
+      displayName: 'Member',
+      role: 'Viewer',
+      status: 'Active',
+      permissions: [],
+      authUserId: 'auth-member',
+      departmentId: 'department-tech',
+      departmentIds: ['department-tech']
+    }],
+    departments: [
+      { id: 'department-tech', name: 'Công Nghệ', sortOrder: 1 },
+      { id: 'department-hr', name: 'Nhân Sự', sortOrder: 2 }
+    ]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-member',
+      authUserId: 'auth-member',
+      email: 'member@example.com',
+      name: 'Member'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'member-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const departments = await fetch(`${base}/api/departments`, { headers: { cookie } });
+    const body = await departments.json();
+
+    assert.equal(departments.status, 200);
+    assert.deepEqual(body.map(department => department.name), ['Công Nghệ', 'Nhân Sự']);
+  } finally {
+    await app.close();
+  }
+});
+
 test('admin can reorder projects and project systems', async () => {
   const repos = createMemoryRepos({
     projects: [

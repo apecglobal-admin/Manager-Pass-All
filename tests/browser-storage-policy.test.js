@@ -307,8 +307,24 @@ test('copying an allowed password does not reveal it in the UI', () => {
 
   assert.doesNotMatch(copyPassword, /revealPassword\(id\)/);
   assert.doesNotMatch(copyPassword, /state\.revealCache\.set/);
+  assert.match(copyPassword, /revealedPassword\(cacheKey\)/);
   assert.match(copyPassword, /credentialRevealPath\(id, credentialId\)/);
   assert.match(copyPassword, /copyText\(password/);
+});
+
+test('revealed passwords show a 20 second countdown before masking again', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const revealPassword = app.match(/async function revealPassword\(id, credentialId = ''\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(app, /const PASSWORD_REVEAL_DURATION_MS = 20_000/);
+  assert.match(app, /function setRevealedPassword\(cacheKey, password\)/);
+  assert.match(app, /function startRevealCountdown\(cacheKey\)/);
+  assert.match(app, /setInterval\(tick, 1000\)/);
+  assert.match(app, /state\.revealCache\.delete\(cacheKey\)/);
+  assert.match(revealPassword, /setRevealedPassword\(credentialId \? `\$\{id\}:\$\{credentialId\}` : id, result\.password\)/);
+  assert.match(credentialDetailRows, /data-reveal-countdown/);
+  assert.match(credentialDetailRows, /Ẩn sau \$\{revealSecondsRemaining\(revealState\)\}s/);
 });
 
 test('accounts stay hidden while systems remain selectable', () => {
@@ -426,7 +442,8 @@ test('account form manages department-scoped credentials', () => {
   assert.match(renderDetail, /credentialDetailRows\(entry/);
   assert.match(credentialDetailRows, /entry\.credentials/);
   assert.match(credentialDetailRows, /credential-department-title/);
-  assert.match(credentialDetailRows, /departmentName\(credential\.departmentId\)/);
+  assert.match(credentialDetailRows, /credentialDepartmentName\(credential\)/);
+  assert.doesNotMatch(credentialDetailRows, /departmentName\(credential\.departmentId\) \|\| 'Phòng ban'/);
   assert.match(credentialDetailRows, /<small>Username<\/small>/);
   assert.doesNotMatch(credentialDetailRows, /<small>\$\{escapeHtml\(departmentName\(credential\.departmentId\)/);
   assert.match(css, /\.credential-department-title[\s\S]+font-size:\s*15px/);

@@ -12,6 +12,7 @@ const state = {
   selectedTypeId: 'All',
   autoLockMinutes: 15,
   revealCache: new Map(),
+  revealTimers: new Map(),
   mode: 'local',
   supabase: null,
   user: null,
@@ -40,6 +41,7 @@ const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
 const SIDEBAR_COLLAPSED_WIDTH = 56;
 const PANEL_MIN_WIDTH = 10;
+const PASSWORD_REVEAL_DURATION_MS = 20_000;
 const runtimeConfig = window.APECGLOBAL_CONFIG || {};
 
 const $ = selector => document.querySelector(selector);
@@ -450,7 +452,7 @@ async function enterApp() {
   appView.classList.remove('hidden');
   applyUserThemePreferences();
   await loadEntryTypes();
-  if (can('users.manage')) await loadDepartments();
+  await loadDepartments();
   if (state.mode === 'local') {
     const settings = await api('/api/settings');
     state.autoLockMinutes = Number(settings.autoLockMinutes || 15);
@@ -469,10 +471,6 @@ async function loadEntryTypes() {
 }
 
 async function loadDepartments() {
-  if (!can('users.manage')) {
-    state.departments = [];
-    return;
-  }
   state.departments = await api('/api/departments');
   fillDepartmentOptions();
 }
@@ -480,7 +478,7 @@ async function loadDepartments() {
 function showLogin() {
   appView.classList.add('hidden');
   loginView.classList.remove('hidden');
-  state.revealCache.clear();
+  clearRevealCache();
   state.view = 'vault';
 }
 
@@ -628,7 +626,7 @@ function renderProjects() {
     state.view = 'vault';
     if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
     state.selectedProjectId = item.dataset.id;
-    state.revealCache.clear();
+    clearRevealCache();
     state.expandedProjectIds.add(String(state.selectedProjectId));
     renderProjects();
     await loadEntries();
@@ -1063,7 +1061,7 @@ function bindSystemSubmenuActions() {
     }
     state.selectedSystemId = section.dataset.systemFilter;
     state.selectedEntryId = null;
-    state.revealCache.clear();
+    clearRevealCache();
     state.expandedProjectIds.add(String(state.selectedProjectId));
     await loadEntries();
     renderHeader();
@@ -1578,6 +1576,13 @@ function credentialDepartmentOptions(selectedId = '') {
   return options.join('').replace(`value="${escapeAttr(selectedId)}"`, `value="${escapeAttr(selectedId)}" selected`);
 }
 
+function credentialDepartmentName(credential = {}) {
+  if (credential.departmentName) return credential.departmentName;
+  if (credential.department?.name) return credential.department.name;
+  if (credential.departmentId) return departmentName(credential.departmentId);
+  return 'Chưa phân phòng ban';
+}
+
 function renderEntryCredentials(credentials = []) {
   const rows = $('#credentialRows');
   if (!rows) return;
@@ -1606,10 +1611,14 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
     : [{ id: '', entryId: entry.id, departmentId: '', username: entry.username || '' }];
   return credentials.map(credential => {
     const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
-    const password = state.revealCache.get(credentialKey) || '************';
+    const revealState = revealedPasswordState(credentialKey);
+    const password = revealState?.password || '************';
+    const revealCountdown = revealState
+      ? `<span class="reveal-countdown" data-reveal-countdown="${escapeAttr(credentialKey)}">Ẩn sau ${revealSecondsRemaining(revealState)}s</span>`
+      : '';
     return `
       <div class="credential-detail-item">
-        <div class="credential-department-title">${escapeHtml(departmentName(credential.departmentId) || 'Phòng ban')}</div>
+        <div class="credential-department-title">${escapeHtml(credentialDepartmentName(credential))}</div>
         <div class="secret-row">
           <span class="secret-icon">${svgIcon('user')}</span>
           <div>
@@ -1625,6 +1634,7 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
             <strong class="password-text">${escapeHtml(password)}</strong>
           </div>
           ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
+          ${revealCountdown}
           <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
           <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
         </div>
@@ -1691,6 +1701,67 @@ async function saveEntry(event) {
   await loadEntries();
 }
 
+function clearRevealCache() {
+  state.revealTimers.forEach(timer => clearInterval(timer));
+  state.revealTimers.clear();
+  state.revealCache.clear();
+}
+
+function revealedPasswordState(cacheKey) {
+  const revealState = state.revealCache.get(cacheKey);
+  if (!revealState) return null;
+  if (revealState.expiresAt <= Date.now()) {
+    state.revealCache.delete(cacheKey);
+    clearRevealTimer(cacheKey);
+    return null;
+  }
+  return revealState;
+}
+
+function revealedPassword(cacheKey) {
+  return revealedPasswordState(cacheKey)?.password || '';
+}
+
+function revealSecondsRemaining(revealState) {
+  return Math.max(0, Math.ceil((revealState.expiresAt - Date.now()) / 1000));
+}
+
+function setRevealedPassword(cacheKey, password) {
+  state.revealCache.set(cacheKey, {
+    password: password || '',
+    expiresAt: Date.now() + PASSWORD_REVEAL_DURATION_MS
+  });
+  renderEntries();
+  startRevealCountdown(cacheKey);
+}
+
+function clearRevealTimer(cacheKey) {
+  const timer = state.revealTimers.get(cacheKey);
+  if (timer) clearInterval(timer);
+  state.revealTimers.delete(cacheKey);
+}
+
+function startRevealCountdown(cacheKey) {
+  clearRevealTimer(cacheKey);
+  const tick = () => {
+    const revealState = revealedPasswordState(cacheKey);
+    if (!revealState) {
+      state.revealCache.delete(cacheKey);
+      clearRevealTimer(cacheKey);
+      renderEntries();
+      return;
+    }
+    document.querySelectorAll('[data-reveal-countdown]').forEach(label => {
+      if (label.dataset.revealCountdown === cacheKey) {
+        label.textContent = `Ẩn sau ${revealSecondsRemaining(revealState)}s`;
+      }
+    });
+  };
+  const timer = setInterval(tick, 1000);
+  state.revealTimers.set(cacheKey, timer);
+  tick();
+}
+
 async function revealPassword(id, credentialId = '') {
   const entry = state.entries.find(item => String(item.id) === String(id));
   if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền xem mật khẩu');
@@ -1698,15 +1769,14 @@ async function revealPassword(id, credentialId = '') {
     ? credentialRevealPath(id, credentialId)
     : `/api/entries/${id}/reveal-password`;
   const result = await api(path, { method: 'POST' });
-  state.revealCache.set(credentialId ? `${id}:${credentialId}` : id, result.password);
-  renderEntries();
+  setRevealedPassword(credentialId ? `${id}:${credentialId}` : id, result.password);
 }
 
 async function copyPassword(id, credentialId = '') {
   const entry = state.entries.find(item => String(item.id) === String(id));
   if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền copy mật khẩu');
   const cacheKey = credentialId ? `${id}:${credentialId}` : id;
-  let password = state.revealCache.get(cacheKey);
+  let password = revealedPassword(cacheKey);
   if (!password) {
     const path = credentialId
       ? credentialRevealPath(id, credentialId)
