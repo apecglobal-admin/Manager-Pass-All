@@ -1157,75 +1157,9 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .credential-rows { display: grid; gap: 10px; }
 .credential-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(160px, 1fr) minmax(160px, 1fr) 36px; gap: 10px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); }
 .credential-remove { width: 36px; height: 40px; padding: 0; }
-.credential-detail-list { padding: 0; }
-.credential-detail-table {
-  max-height: 320px;
-  overflow-y: auto;
-  display: grid;
-}
-.credential-detail-head,
-.credential-detail-row {
-  display: grid;
-  grid-template-columns: minmax(150px, .78fr) minmax(180px, 1fr) minmax(260px, 1.24fr);
-  align-items: center;
-  gap: 12px;
-}
-.credential-detail-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  min-height: 38px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-panel-strong);
-  color: var(--text3);
-  font-size: 11px;
-  font-weight: 900;
-}
-.credential-detail-row {
-  min-height: 58px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line2);
-}
-.credential-detail-row:last-child { border-bottom: 0; }
-.credential-cell {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.credential-cell > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.credential-cell small {
-  display: none;
-  color: var(--text3);
-  font-size: 11px;
-  font-weight: 800;
-}
-.credential-cell strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 800;
-}
-.credential-password-cell {
-  justify-content: space-between;
-}
-.credential-password-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-left: auto;
-}
-.compact-copy {
-  margin-left: auto;
-}
+.credential-detail-list { gap: 12px; }
+.credential-detail-item { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.credential-detail-item:last-child { padding-bottom: 0; border-bottom: 0; }
 .permission-grid { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
 .permission-grid label { display: flex; align-items: center; gap: 8px; color: var(--text2); }
 .permission-grid input { width: 15px; height: 15px; accent-color: var(--accent); }
@@ -1343,24 +1277,6 @@ label,
   .permission-type-row > span { grid-column: 1 / -1; font-weight: 900; }
   .entry-type-form-head { align-items: stretch; flex-direction: column; }
   .entry-type-form-actions button { flex: 1; }
-  .credential-detail-head { display: none; }
-  .credential-detail-row {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-    gap: 8px;
-    padding: 10px;
-  }
-  .credential-cell small { display: block; }
-  .credential-password-cell {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .credential-password-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    margin-left: 0;
-  }
-  .compact-copy { margin-left: auto; }
 }
 
 @media (max-width: 520px) {
