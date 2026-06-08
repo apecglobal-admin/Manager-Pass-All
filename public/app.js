@@ -89,6 +89,8 @@ function bindEvents() {
     syncRolePermissions();
     syncUserDepartmentVisibility();
   });
+  $('#userDepartmentSelect')?.addEventListener('change', renderSelectedDepartmentLabels);
+  $('#selectedDepartmentLabels')?.addEventListener('click', removeSelectedDepartmentLabel);
   $('#toggleDepartmentQuickAddBtn')?.addEventListener('click', toggleDepartmentQuickAdd);
   $('#saveDepartmentQuickAddBtn')?.addEventListener('click', saveDepartmentQuickAdd);
   $('#projectSearch').addEventListener('input', renderProjects);
@@ -2073,13 +2075,13 @@ function fillDepartmentOptions(selectedIds = selectedUserDepartmentIds()) {
   const select = $('#userDepartmentSelect');
   if (!select) return;
   const selected = new Set((Array.isArray(selectedIds) ? selectedIds : [selectedIds]).map(id => String(id || '')).filter(Boolean));
-  select.innerHTML = [
-    '<option value="">Chưa phân phòng ban</option>',
-    ...state.departments.map(department => `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`)
-  ].join('');
+  select.innerHTML = state.departments
+    .map(department => `<option value="${escapeAttr(department.id)}">${escapeHtml(department.name)}</option>`)
+    .join('');
   [...select.options].forEach(option => {
     option.selected = selected.has(String(option.value));
   });
+  renderSelectedDepartmentLabels();
 }
 
 function selectedUserDepartmentIds() {
@@ -2088,11 +2090,38 @@ function selectedUserDepartmentIds() {
   return [...select.selectedOptions].map(option => option.value).filter(Boolean);
 }
 
+function renderSelectedDepartmentLabels() {
+  const labels = $('#selectedDepartmentLabels');
+  if (!labels) return;
+  const ids = selectedUserDepartmentIds();
+  labels.innerHTML = ids.length
+    ? ids.map(id => `
+      <span class="selected-department-label">
+        ${escapeHtml(departmentName(id))}
+        <button type="button" data-remove-user-department="${escapeAttr(id)}" title="Bỏ phòng ban">×</button>
+      </span>
+    `).join('')
+    : '<span class="selected-department-empty">Chưa phân phòng ban</span>';
+}
+
+function removeSelectedDepartmentLabel(event) {
+  const id = event.target?.dataset?.removeUserDepartment;
+  if (!id) return;
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  [...select.options].forEach(option => {
+    if (String(option.value) === String(id)) option.selected = false;
+  });
+  renderSelectedDepartmentLabels();
+}
+
 function syncUserDepartmentVisibility() {
   const form = $('#userForm');
   const departmentField = $('#userDepartmentSelect')?.closest('.department-field');
+  const departmentLabels = $('#selectedDepartmentLabels');
   const isAdminRole = form?.role?.value === 'Admin';
   departmentField?.classList.toggle('hidden', Boolean(isAdminRole));
+  departmentLabels?.classList.toggle('hidden', Boolean(isAdminRole));
   $('#toggleDepartmentQuickAddBtn')?.toggleAttribute('disabled', Boolean(isAdminRole));
   if (isAdminRole) {
     fillDepartmentOptions([]);
@@ -2117,13 +2146,14 @@ async function saveDepartmentQuickAdd() {
   const input = $('#departmentQuickAddName');
   const name = input?.value.trim();
   if (!name) return;
+  const selectedIds = selectedUserDepartmentIds();
   const department = await api('/api/departments', {
     method: 'POST',
     body: JSON.stringify({ name })
   });
   state.departments = [...state.departments.filter(item => String(item.id) !== String(department.id)), department]
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.name).localeCompare(String(b.name)));
-  fillDepartmentOptions(department.id);
+  fillDepartmentOptions([...selectedIds, department.id]);
   hideDepartmentQuickAdd();
   toast('Đã thêm phòng ban');
 }

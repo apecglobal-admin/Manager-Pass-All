@@ -1118,6 +1118,11 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .department-field { display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; align-items: end; }
 .department-field select[multiple] { min-height: 96px; padding: 8px; }
 .department-field button { height: 40px; padding: 0; font-size: 18px; }
+.selected-department-labels { min-height: 28px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: -2px; }
+.selected-department-label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--accent-light); background: var(--accent-dim); border: 1px solid rgba(124, 58, 237, .22); border-radius: var(--r-pill); padding: 4px 8px; font-size: 11px; font-weight: 900; line-height: 1; }
+.selected-department-label button { width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border-radius: var(--r-pill); color: var(--text2); background: rgba(15, 23, 42, .42); border: 1px solid rgba(148, 163, 184, .18); font-size: 13px; line-height: 1; }
+.selected-department-label button:hover { color: var(--danger); border-color: rgba(244, 63, 94, .38); background: rgba(244, 63, 94, .12); }
+.selected-department-empty { color: var(--text3); font-size: 12px; font-weight: 700; }
 .department-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .department-quick-add button { height: 40px; }
 .system-type-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
