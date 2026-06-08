@@ -1160,6 +1160,12 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .credential-detail-list { gap: 12px; }
 .credential-detail-item { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .credential-detail-item:last-child { padding-bottom: 0; border-bottom: 0; }
+.credential-department-title {
+  padding: 0 12px 2px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
 .permission-grid { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
 .permission-grid label { display: flex; align-items: center; gap: 8px; color: var(--text2); }
 .permission-grid input { width: 15px; height: 15px; accent-color: var(--accent); }

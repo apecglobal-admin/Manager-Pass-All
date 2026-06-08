@@ -395,6 +395,7 @@ test('system-based account flow treats account type as metadata', () => {
 test('account form manages department-scoped credentials', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
   const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
   const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -409,6 +410,12 @@ test('account form manages department-scoped credentials', () => {
   assert.match(saveEntry, /data\.credentials = collectEntryCredentials\(\)/);
   assert.match(renderDetail, /credentialDetailRows\(entry/);
   assert.match(credentialDetailRows, /entry\.credentials/);
+  assert.match(credentialDetailRows, /credential-department-title/);
+  assert.match(credentialDetailRows, /departmentName\(credential\.departmentId\)/);
+  assert.match(credentialDetailRows, /<small>Username<\/small>/);
+  assert.doesNotMatch(credentialDetailRows, /<small>\$\{escapeHtml\(departmentName\(credential\.departmentId\)/);
+  assert.match(css, /\.credential-department-title[\s\S]+font-size:\s*15px/);
+  assert.match(css, /\.credential-department-title[\s\S]+font-weight:\s*900/);
   assert.match(app, /\/api\/entries\/\$\{entryId\}\/credentials\/\$\{credentialId\}\/reveal-password/);
 });
 

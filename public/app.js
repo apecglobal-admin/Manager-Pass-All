@@ -1620,10 +1620,11 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
     const password = state.revealCache.get(credentialKey) || '************';
     return `
       <div class="credential-detail-item">
+        <div class="credential-department-title">${escapeHtml(departmentName(credential.departmentId) || 'Phòng ban')}</div>
         <div class="secret-row">
           <span class="secret-icon">${svgIcon('user')}</span>
           <div>
-            <small>${escapeHtml(departmentName(credential.departmentId) || 'Phòng ban')}</small>
+            <small>Username</small>
             <strong>${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
           </div>
           ${canViewUsername && credential.username ? `<button class="ghost-btn" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
