@@ -459,25 +459,27 @@ test('project content renders even when systems or entries fail to load', () => 
   assert.doesNotMatch(entriesCatch, /state\.projectSystems = \[\]/);
 });
 
-test('project sidebar stays project-only while systems render in the middle column', () => {
+test('project sidebar renders systems as submenu while content only shows account detail', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderEntries = app.match(/function renderEntries\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(app, /projectSystemsByProjectId: \{\}/);
   assert.doesNotMatch(html, /id="addSystemBtn"/);
   assert.doesNotMatch(app, /addSystemBtn/);
-  assert.doesNotMatch(renderProjects, /data-toggle-project-systems|renderSystemSubmenu|project-expand-btn/);
-  assert.doesNotMatch(app, /function renderSystemSubmenu/);
-  assert.doesNotMatch(app, /data-edit-system-sidebar|data-delete-system-sidebar/);
-  assert.match(renderSystemSections, /state\.projectSystems\.map/);
-  assert.match(renderSystemSections, /data-system-filter="\$\{system\.id\}"/);
-  assert.match(renderSystemSections, /data-edit-system="\$\{system\.id\}"/);
-  assert.match(renderSystemSections, /data-delete-system="\$\{system\.id\}"/);
-  assert.match(renderSystemSections, /aria-label="Mở menu hệ thống"/);
-  assert.match(renderSystemSections, /class="system-group/);
+  assert.doesNotMatch(html, /id="entryList"/);
+  assert.doesNotMatch(html, /id="emptyState"/);
+  assert.doesNotMatch(html, /id="detailResizeHandle"/);
+  assert.match(renderProjects, /renderSystemSubmenu\(project\)/);
+  assert.match(app, /function renderSystemSubmenu\(project\)/);
+  assert.match(renderSystemSubmenu, /data-system-filter="\$\{system\.id\}"/);
+  assert.match(renderSystemSubmenu, /data-edit-system="\$\{system\.id\}"/);
+  assert.match(renderSystemSubmenu, /data-delete-system="\$\{system\.id\}"/);
+  assert.match(renderSystemSubmenu, /aria-label="Mở menu hệ thống"/);
+  assert.match(renderSystemSubmenu, /class="system-submenu/);
   assert.match(app, /class="[^"]*account-more-btn[^"]*"/);
   assert.match(app, /class="[^"]*account-action-menu[^"]*"/);
   assert.doesNotMatch(app, /data-select="\$\{entry\.id\}"/);
@@ -487,16 +489,18 @@ test('project sidebar stays project-only while systems render in the middle colu
   assert.doesNotMatch(app, /class="entry-card-actions"/);
   assert.doesNotMatch(app, /class="card-head"[\s\S]+class="type-badge"/);
   assert.doesNotMatch(app, /system-account-empty/);
-  assert.doesNotMatch(renderSystemSections, /system\.type/);
+  assert.doesNotMatch(renderSystemSubmenu, /system\.type/);
   assert.doesNotMatch(css, /\.system-account-card/);
   assert.doesNotMatch(css, /\.system-account-list/);
   assert.match(css, /\.account-action-menu[\s\S]+opacity:\s*0/);
   assert.match(css, /\.account-action-menu button[\s\S]+justify-content:\s*flex-start/);
   assert.match(css, /\.item-menu-wrap\.menu-open \.account-action-menu/);
   assert.match(css, /\.project-chip:hover \.account-more-btn/);
-  assert.match(css, /\.system-section:hover \.account-more-btn/);
+  assert.match(css, /\.system-chip:hover \.account-more-btn/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
+  assert.doesNotMatch(app, /function renderSystemSections/);
+  assert.doesNotMatch(renderEntries, /entryList|emptyState|renderSystemSections|bindSystemColumnActions/);
   assert.match(app, /renderDetail\(selectedEntry\)/);
   assert.doesNotMatch(app, /state\.selectedEntryId = visibleEntries\(\)\[0\]\?\.id \|\| null/);
   assert.match(app, /function activateProjectForSystemAction\(projectId\)/);
@@ -508,7 +512,7 @@ test('admin can drag projects and systems to persist custom order', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
   const renderProjects = app.match(/function renderProjects\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const renderSystemSections = app.match(/function renderSystemSections\(rows = state\.entries\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(project\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindProjectDragActions = app.match(/function bindProjectDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const bindSystemDragActions = app.match(/function bindSystemDragActions\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const persistProjectOrder = app.match(/async function persistProjectOrder\(\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -516,7 +520,7 @@ test('admin can drag projects and systems to persist custom order', () => {
 
   assert.match(renderProjects, /draggable="\$\{isAdmin\(\) \? 'true' : 'false'\}"/);
   assert.match(renderProjects, /data-drag-project/);
-  assert.match(renderSystemSections, /data-drag-system/);
+  assert.match(renderSystemSubmenu, /data-drag-system/);
   assert.match(bindProjectDragActions, /text\/project-id/);
   assert.match(bindProjectDragActions, /moveItemBefore\(state\.projects, draggedId, targetId\)/);
   assert.match(bindSystemDragActions, /text\/system-id/);
@@ -562,29 +566,28 @@ test('bulk delete controls are limited to accounts', () => {
   assert.match(css, /\.bulk-check/);
 });
 
-test('dashboard panels expose desktop mouse resize controls without browser storage', () => {
+test('dashboard exposes sidebar mouse resize controls without browser storage', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const css = readFileSync('public/styles.css', 'utf8');
 
   assert.match(html, /id="sidebarResizeHandle"/);
-  assert.match(html, /id="detailResizeHandle"/);
+  assert.doesNotMatch(html, /id="detailResizeHandle"/);
   assert.match(html, /aria-label="[^"]*danh sách dự án|aria-label="[^"]*danh sÃ¡ch dá»± Ã¡n/);
-  assert.match(html, /aria-label="[^"]*chi tiết account|aria-label="[^"]*chi tiáº¿t account/);
+  assert.doesNotMatch(html, /aria-label="[^"]*chi tiết account|aria-label="[^"]*chi tiáº¿t account/);
 
   assert.match(app, /sidebarWidth:\s*280/);
-  assert.match(app, /detailPanelWidth:\s*520/);
   assert.match(app, /const PANEL_MIN_WIDTH\s*=\s*10/);
   assert.doesNotMatch(app, /const SIDEBAR_MAX_WIDTH/);
   assert.doesNotMatch(app, /const DETAIL_MAX_WIDTH/);
   assert.match(app, /function maxSidebarWidth\(\)/);
-  assert.match(app, /function maxDetailWidth\(\)/);
+  assert.doesNotMatch(app, /function maxDetailWidth\(\)/);
   assert.match(app, /window\.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH/);
-  assert.match(app, /window\.innerWidth - sidebarWidth - PANEL_MIN_WIDTH/);
+  assert.doesNotMatch(app, /window\.innerWidth - sidebarWidth - PANEL_MIN_WIDTH/);
   assert.match(app, /function bindPanelResizeActions\(\)/);
   assert.match(app, /function updatePanelWidths\(\)/);
   assert.match(app, /--project-sidebar-width/);
-  assert.match(app, /--detail-panel-width/);
+  assert.doesNotMatch(app, /--detail-panel-width/);
   assert.match(app, /pointerdown/);
   assert.match(app, /pointermove/);
   assert.match(app, /pointerup/);
@@ -593,16 +596,16 @@ test('dashboard panels expose desktop mouse resize controls without browser stor
   assert.match(app, /function currentPanelLayoutPreferences/);
   assert.match(app, /function savePanelLayoutPreferences/);
   assert.match(app, /panelLayout:\s*\{/);
+  assert.doesNotMatch(app, /detailPanelWidth/);
   assert.match(app, /api\('\/api\/me\/preferences'/);
   assert.match(app, /schedulePanelLayoutPreferenceSave\(\)/);
 
   assert.match(css, /--project-sidebar-width:\s*clamp\(220px, 20vw, 320px\)/);
   assert.match(css, /--project-sidebar-collapsed-width:\s*56px/);
-  assert.match(css, /--detail-panel-width:\s*min\(520px, 42vw\)/);
+  assert.doesNotMatch(css, /--detail-panel-width/);
   assert.match(css, /\.panel-resize-handle/);
   assert.match(css, /\.sidebar-resize-handle/);
-  assert.match(css, /\.detail-resize-handle/);
-  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*minmax\(10px, 1fr\) var\(--detail-panel-width\)/);
+  assert.match(css, /\.content-body:has\(\.detail-aside\.open\)\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.panel-resize-handle\s*\{\s*display:\s*none/);
 });
 test('project member UI keeps Supabase UUID identifiers as strings', () => {
@@ -624,7 +627,7 @@ test('empty and restricted account states use permission-aware copy', () => {
   const entryListSubtitle = app.match(/function entryListSubtitle\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(app, /No user/);
-  assert.match(renderEntries, /renderSystemSections\(rows\)/);
+  assert.doesNotMatch(renderEntries, /renderSystemSections\(rows\)/);
   assert.match(renderEntries, /renderDetail\(selectedEntry\)/);
   assert.match(app, /function entryListSubtitle\(entry\)/);
   assert.match(app, /Bạn chưa có quyền xem tài khoản trong dự án này|Báº¡n chÆ°a cÃ³ quyá»n xem tÃ i khoáº£n trong dá»± Ã¡n nÃ y/);

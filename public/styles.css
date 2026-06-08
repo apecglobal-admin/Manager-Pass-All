@@ -260,7 +260,6 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .app {
   --project-sidebar-width: clamp(220px, 20vw, 320px);
   --project-sidebar-collapsed-width: 56px;
-  --detail-panel-width: min(520px, 42vw);
   min-height: 100vh;
   display: block;
   padding-top: 52px;
@@ -595,6 +594,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   min-height: 0;
   padding-right: 2px;
 }
+.project-node { display: grid; gap: 5px; }
 .project-chip {
   display: flex;
   align-items: center;
@@ -769,16 +769,16 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .app.sidebar-collapsed .sidebar-toggle-icon { transform: rotate(180deg); }
 .app.sidebar-collapsed .content-header,
 .app.sidebar-collapsed .content-body { margin-left: var(--project-sidebar-collapsed-width); }
-.content-body:has(.detail-aside.open) { grid-template-columns: minmax(10px, 1fr) var(--detail-panel-width); }
+.content-body:has(.detail-aside.open) { grid-template-columns: 1fr; }
 .detail-resize-handle {
   display: none;
   top: 0;
   bottom: 0;
-  right: var(--detail-panel-width);
+  right: 0;
   width: 10px;
   transform: translateX(5px);
 }
-.content-body:has(.detail-aside.open) .detail-resize-handle { display: block; }
+.content-body:has(.detail-aside.open) .detail-resize-handle { display: none; }
 .content-body:has(.detail-aside.open) .entry-grid { grid-template-columns: 1fr; }
 .content-body:has(.detail-aside.open) .entry-card {
   min-height: 64px;
@@ -948,7 +948,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   pointer-events: none;
   transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
 }
-.account-action-menu button {
+.account-action-menu button,
+.account-action-menu [role="menuitem"] {
   width: 100%;
   min-height: 30px;
   display: flex;
@@ -963,12 +964,15 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   font-size: 12px;
   font-weight: 800;
   text-align: left;
+  cursor: pointer;
 }
-.account-action-menu button:hover {
+.account-action-menu button:hover,
+.account-action-menu [role="menuitem"]:hover {
   background: var(--accent-dim);
   color: var(--text);
 }
-.account-action-menu button.danger {
+.account-action-menu button.danger,
+.account-action-menu [role="menuitem"].danger {
   color: var(--danger);
 }
 .account-action-menu .svg-icon {
@@ -976,7 +980,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   height: 13px;
 }
 .project-chip .account-action-menu,
-.system-section-head .account-action-menu {
+.system-section-head .account-action-menu,
+.system-chip .account-action-menu {
   top: calc(100% + 6px);
   right: 0;
 }
@@ -986,6 +991,9 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .system-section:hover .account-more-btn,
 .system-section:focus-within .account-more-btn,
 .system-section.active .account-more-btn,
+.system-chip:hover .account-more-btn,
+.system-chip:focus-within .account-more-btn,
+.system-chip.active .account-more-btn,
 .item-menu-wrap.menu-open .account-more-btn {
   opacity: 1;
   border-color: var(--line2);
@@ -1203,7 +1211,7 @@ label,
 .section-label { font-size: 12px; }
 
 @media (max-width: 1100px) {
-  .content-body:has(.detail-aside.open) { grid-template-columns: minmax(10px, 1fr) var(--detail-panel-width); }
+  .content-body:has(.detail-aside.open) { grid-template-columns: 1fr; }
   .entry-grid { grid-template-columns: 1fr; }
   #importBtn,
   #exportCsvBtn { display: none; }
@@ -1246,7 +1254,7 @@ label,
     padding-right: 0;
   }
   .project-chip { flex: 0 0 auto; width: auto; min-width: 150px; }
-  .system-submenu { display: none; }
+  .system-submenu { display: grid; }
   .content-header,
   .content-body { margin-left: 0; }
   .app.sidebar-collapsed .content-header,

@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260608-department-dropdown">
+    <link rel="stylesheet" href="/styles.css?v=20260608-sidebar-systems">
   </head>
   <body>
 
@@ -133,13 +133,8 @@
           <button id="newEntryBtn" class="btn-accent" disabled>＋ Thêm account</button>
         </section>
 
-        <!-- Content body: entry grid + detail slide-over -->
+        <!-- Content body: account detail only -->
         <section class="content-body">
-          <div class="grid-area">
-            <div id="entryList" class="entry-grid"></div>
-            <div id="emptyState" class="empty">Chưa có dữ liệu.</div>
-          </div>
-          <button id="detailResizeHandle" class="panel-resize-handle detail-resize-handle" type="button" aria-label="Kéo để đổi độ rộng chi tiết account" title="Kéo để đổi độ rộng chi tiết account"></button>
           <aside class="detail-aside" id="detailAside">
             <div id="detailPanel" class="detail-empty">
               <div class="empty-lock">🛡️</div>
@@ -282,6 +277,6 @@
     <div id="toast" class="toast"></div>
     <script src="/runtime-config.js?v=20260604-runtime-config"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260608-department-dropdown"></script>
+    <script src="/app.js?v=20260608-sidebar-systems"></script>
   </body>
 </html>
