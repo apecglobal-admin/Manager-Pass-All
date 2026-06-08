@@ -478,13 +478,14 @@ test('new accounts are created from the active project system', () => {
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
 
-  assert.match(canCreateEntry, /!state\.selectedSystemId\) return false/);
+  assert.match(canCreateEntry, /return Boolean\(firstCreatableSystemId\(\)\)/);
   assert.match(firstCreatableSystemId, /state\.selectedSystemId && state\.projectSystems\.some/);
-  assert.doesNotMatch(firstCreatableSystemId, /state\.projectSystems\[0\]/);
+  assert.match(firstCreatableSystemId, /isAdmin\(\) \? state\.projectSystems\[0\]\?\.id/);
+  assert.match(firstCreatableSystemId, /permissionForProjectSystem\(system\.id\)\?\.canCreate/);
   assert.match(loadProjectSystems, /state\.projectSystemsByProjectId\[String\(projectId\)\] = systems/);
   assert.match(loadProjectSystems, /state\.selectedSystemId = systems\[0\]\.id/);
   assert.doesNotMatch(renderSystemSubmenu, /data-system-filter="All"|Táº¥t cáº£ há»‡ thá»‘ng|TÃ¡ÂºÂ¥t cÃ¡ÂºÂ£ hÃ¡Â»â€¡ thÃ¡Â»â€˜ng/);
-  assert.match(openEntryDialog, /!state\.selectedSystemId/);
+  assert.doesNotMatch(openEntryDialog, /Chọn một hệ thống cụ thể trước khi thêm account/);
   assert.match(openEntryDialog, /form\.systemId\.value = formEntry\.id \? \(formEntry\.systemId \|\| formEntry\.projectSystemId \|\| ''\) : firstCreatableSystemId\(\)/);
 });
 
@@ -548,6 +549,10 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.match(css, /\.system-chip \.item-menu-wrap[\s\S]+position:\s*relative/);
   assert.match(css, /\.project-chip:hover \.account-more-btn/);
   assert.match(css, /\.system-chip:hover \.account-more-btn/);
+  assert.match(css, /\.project-chip \.item-menu-wrap,[\s\S]+align-self:\s*center/);
+  assert.match(css, /\.project-chip \.account-more-btn,[\s\S]+border-color:\s*transparent/);
+  assert.match(css, /\.system-submenu \.system-chip[\s\S]+font-size:\s*12px/);
+  assert.match(css, /\.system-chip-main > span[\s\S]+font-weight:\s*500/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
   assert.doesNotMatch(app, /function renderSystemSections/);

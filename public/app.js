@@ -898,9 +898,7 @@ function canCreateEntry() {
   const project = currentProject();
   if (!project) return false;
   if (!state.projectSystems.length) return false;
-  if (!state.selectedSystemId) return false;
-  if (state.currentUser?.role === 'Admin') return true;
-  return Boolean(permissionForProjectSystem(state.selectedSystemId, project)?.canCreate);
+  return Boolean(firstCreatableSystemId());
 }
 
 function entryTypeOptionsForEntry(entry = {}) {
@@ -941,7 +939,7 @@ function firstCreatableEntryTypeId() {
 
 function firstCreatableSystemId() {
   if (state.selectedSystemId && state.projectSystems.some(system => String(system.id) === String(state.selectedSystemId))) return state.selectedSystemId;
-  return '';
+  return isAdmin() ? state.projectSystems[0]?.id || '' : state.projectSystems.find(system => permissionForProjectSystem(system.id)?.canCreate)?.id || '';
 }
 
 function renderStats() {
@@ -1516,9 +1514,9 @@ async function deleteProject(id) {
 async function openEntryDialog(entry = {}) {
   const editing = Boolean(entry.id);
   if (!editing && !state.projectSystems.length) return toast('Tạo hệ thống trước khi thêm account');
-  if (!editing && !state.selectedSystemId) return toast('Chọn một hệ thống cụ thể trước khi thêm account');
   if (editing && !entry.permissions?.canEdit) return toast('Bạn không có quyền sửa account này');
   if (!editing && !canCreateEntry()) return toast('Bạn không có quyền tạo account trong dự án này');
+  if (!editing && !state.selectedSystemId) state.selectedSystemId = firstCreatableSystemId();
   let formEntry = entry;
   if (editing) {
     try {

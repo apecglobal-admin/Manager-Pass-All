@@ -717,6 +717,13 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   border-color: rgba(124, 58, 237, .2);
 }
 .system-chip.active small { color: var(--accent-light); }
+.system-submenu .system-chip {
+  font-size: 12px;
+  font-weight: 500;
+}
+.system-chip-main > span {
+  font-weight: 500;
+}
 .add-system-inline {
   margin-top: 2px;
   color: var(--accent-light);
@@ -913,6 +920,7 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   z-index: 20;
   flex: 0 0 auto;
   margin-left: auto;
+  align-self: center;
 }
 .account-more-btn {
   width: 26px;
@@ -928,8 +936,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .project-chip .account-more-btn,
 .system-section-head .account-more-btn {
   opacity: 0;
-  border-color: var(--line2);
-  background: var(--bg-input);
+  border-color: transparent;
+  background: transparent;
 }
 .account-action-menu {
   position: absolute;
@@ -1000,8 +1008,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
 .system-chip.active .account-more-btn,
 .item-menu-wrap.menu-open .account-more-btn {
   opacity: 1;
-  border-color: var(--line2);
-  background: var(--bg-input);
+  border-color: transparent;
+  background: transparent;
   color: var(--text);
 }
 .item-menu-wrap.menu-open {
