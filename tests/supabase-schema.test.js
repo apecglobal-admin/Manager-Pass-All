@@ -38,3 +38,33 @@ test('Supabase user preferences migration stores per-user UI settings', () => {
   assert.match(sql, /alter table public\.app_users/i);
   assert.match(sql, /add column if not exists preferences jsonb not null default '\{\}'::jsonb/i);
 });
+
+test('Supabase departments migration stores dynamic user departments', () => {
+  const sql = readFileSync('sql/010_departments.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.departments/i);
+  assert.match(sql, /alter table public\.app_users/i);
+  assert.match(sql, /add column if not exists department_id uuid/i);
+  assert.match(sql, /departments admin access/i);
+});
+
+test('Supabase entry credentials migration stores department-scoped credentials', () => {
+  const sql = readFileSync('sql/011_entry_credentials.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.entry_credentials/i);
+  assert.match(sql, /entry_id uuid not null references public\.entries\(id\)/i);
+  assert.match(sql, /department_id uuid references public\.departments\(id\)/i);
+  assert.match(sql, /password_cipher jsonb not null/i);
+  assert.match(sql, /idx_entry_credentials_department_id/i);
+  assert.match(sql, /entry credentials admin access/i);
+});
+
+test('Supabase user departments migration stores multiple departments per user', () => {
+  const sql = readFileSync('sql/012_user_departments.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.user_departments/i);
+  assert.match(sql, /user_id uuid not null references public\.app_users\(id\)/i);
+  assert.match(sql, /department_id uuid not null references public\.departments\(id\)/i);
+  assert.match(sql, /primary key \(user_id, department_id\)/i);
+  assert.match(sql, /user departments admin access/i);
+});

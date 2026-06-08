@@ -39,3 +39,10 @@ test('Vercel login page loads dynamic runtime config before Supabase client', ()
   assert.equal(html.includes('src="/config.js"'), false);
   assert.match(server, /pathname === '\/runtime-config\.js'/);
 });
+
+test('static file opens redirect to the local development server', () => {
+  const html = readFileSync('public/index.html', 'utf8');
+
+  assert.match(html, /window\.location\.protocol === 'file:'|location\.protocol === 'file:'/);
+  assert.match(html, /http:\/\/127\.0\.0\.1:3000\//);
+});

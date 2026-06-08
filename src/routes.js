@@ -18,7 +18,6 @@ export function createRouter(baseRepos, options = {}) {
   });
   const sessionSecret = String(options.sessionSecret || process.env.APP_SECRET || 'apecglobal-manager-local-development-secret');
   const sessionMaxAgeSeconds = Number(options.sessionMaxAgeSeconds || DEFAULT_SESSION_MAX_AGE_SECONDS);
-  const authenticateWithPassword = options.authenticateWithPassword;
   const verifyGoogleAccessToken = options.verifyGoogleAccessToken;
   const inviteUserByEmail = options.inviteUserByEmail;
   const notifyUserApproved = options.notifyUserApproved;
@@ -272,7 +271,7 @@ export function createRouter(baseRepos, options = {}) {
     const entries = repos.entries.listByProjectForUser
       ? await repos.entries.listByProjectForUser(projectId, user)
       : await repos.entries.listByProject(projectId);
-    if (isAdminUser(user)) return entries;
+    if (isAdminUser(user)) return entries.map(sanitizeEntryCredentials);
     const decorated = [];
     for (const entry of entries) {
       const visible = await applyEntryPermission(entry, user, projectId);
@@ -297,7 +296,7 @@ export function createRouter(baseRepos, options = {}) {
     const entries = repos.entries.searchForUser
       ? await repos.entries.searchForUser(query, user)
       : await repos.entries.search(query);
-    if (isAdminUser(user)) return entries;
+    if (isAdminUser(user)) return entries.map(sanitizeEntryCredentials);
     const decorated = [];
     for (const entry of entries) {
       const visible = await applyEntryPermission(entry, user, entry.projectId);
@@ -313,12 +312,23 @@ export function createRouter(baseRepos, options = {}) {
       entryTypeId
     });
     if (!permission?.canViewEntry) return null;
+    const credentials = visibleCredentialsForUser(entry.credentials || [], user)
+      .map(credential => ({
+        id: credential.id,
+        entryId: credential.entryId || entry.id,
+        departmentId: credential.departmentId || null,
+        username: permission.canViewUsername ? credential.username : '',
+        passwordMasked: true,
+        sortOrder: credential.sortOrder || 0
+      }));
+    const primaryCredential = credentials[0] || null;
     return {
       ...entry,
       systemId: entry.systemId || entry.projectSystemId || null,
       typeId: entry.typeId || entryTypeId,
       url: permission.canViewUrl ? entry.url : '',
-      username: permission.canViewUsername ? entry.username : '',
+      username: permission.canViewUsername ? (primaryCredential?.username || entry.username || '') : '',
+      credentials,
       notes: permission.canViewNotes ? entry.notes : '',
       tags: permission.canViewNotes ? entry.tags : [],
       permissions: {
@@ -332,6 +342,51 @@ export function createRouter(baseRepos, options = {}) {
         canDelete: permission.canDelete
       }
     };
+  }
+
+  function visibleCredentialsForUser(credentials, user) {
+    if (isAdminUser(user)) return credentials;
+    const departmentIds = userDepartmentIds(user);
+    if (!departmentIds.size) return [];
+    return credentials.filter(credential => departmentIds.has(String(credential.departmentId || '')));
+  }
+
+  function userDepartmentIds(user) {
+    return new Set((user?.departmentIds?.length ? user.departmentIds : [user?.departmentId])
+      .filter(Boolean)
+      .map(id => String(id)));
+  }
+
+  function sanitizeEntryCredentials(entry) {
+    return {
+      ...entry,
+      credentials: (entry.credentials || []).map(credential => ({
+        id: credential.id,
+        entryId: credential.entryId || entry.id,
+        departmentId: credential.departmentId || null,
+        username: credential.username || '',
+        passwordMasked: true,
+        sortOrder: credential.sortOrder || 0
+      }))
+    };
+  }
+
+  async function requireCredentialAction(req, res, entryId, credentialId, action) {
+    const user = await requireEntryAction(req, res, entryId, action);
+    if (!user) return null;
+    if (isAdminUser(user)) return user;
+    const credential = repos.entries.getCredential
+      ? await repos.entries.getCredential(entryId, credentialId)
+      : (await findEditableEntry(user, entryId))?.credentials?.find(item => String(item.id) === String(credentialId));
+    if (!credential) {
+      sendJson(res, 404, { error: 'Credential not found' });
+      return null;
+    }
+    if (!userDepartmentIds(user).has(String(credential.departmentId || ''))) {
+      sendJson(res, 403, { error: 'Permission denied' });
+      return null;
+    }
+    return user;
   }
 
   async function decorateProjectForUser(project, user) {
@@ -472,51 +527,7 @@ export function createRouter(baseRepos, options = {}) {
 
       try {
       if (req.method === 'POST' && path === '/api/auth/login') {
-        if (!authenticateWithPassword) {
-          return sendJson(res, 503, { error: 'Supabase password login is not configured' });
-        }
-        const body = await readJson(req);
-        if (!body.username || !body.password) {
-          return sendJson(res, 400, { error: 'Username and password are required' });
-        }
-
-        let verified;
-        try {
-          verified = await authenticateWithPassword({
-            username: body.username,
-            password: body.password
-          });
-        } catch (error) {
-          return sendJson(res, 401, { error: error.message || 'Invalid username or password' });
-        }
-
-        const email = String(verified?.email || '').trim();
-        if (!email) return sendJson(res, 401, { error: 'Supabase account has no email' });
-        useAccessToken(verified.accessToken);
-
-        let user;
-        try {
-          user = await repos.users.activateForGoogleLogin(email, {
-            authUserId: verified.authUserId || verified.id,
-            displayName: verified?.name || verified?.displayName || email
-          });
-        } catch (error) {
-          return sendJson(res, 403, { error: error.message });
-        }
-        if (!user) {
-          const requested = await repos.users.requestGoogleAccess({
-            username: email,
-            authUserId: verified.authUserId || verified.id,
-            displayName: verified?.name || verified?.displayName || email
-          });
-          await repos.activity.log('user.access_request', { details: requested.username });
-          if (requested.status === 'Active') {
-            return createSession(requested, req, res, { accessToken: verified.accessToken, supabase: verified });
-          }
-          return sendJson(res, 403, { error: 'Tai khoan dang cho admin phe duyet' });
-        }
-
-        return createSession(user, req, res, { accessToken: verified.accessToken, supabase: verified });
+        return sendJson(res, 410, { error: 'Username/password login is disabled. Use Google login.' });
       }
 
       if (req.method === 'POST' && path === '/api/auth/google') {
@@ -604,6 +615,17 @@ export function createRouter(baseRepos, options = {}) {
           projectMemberships: await repos.projectMemberships.listForUser(user.id),
           detailedPermissions: await repos.detailedPermissions.listForUser(user.id)
         }))));
+      }
+
+      if (req.method === 'GET' && path === '/api/departments') {
+        return sendJson(res, 200, await repos.departments.list());
+      }
+
+      if (req.method === 'POST' && path === '/api/departments') {
+        if (!await requirePermission(req, res, 'users.manage')) return true;
+        const department = await repos.departments.create(await readJson(req));
+        await repos.activity.log('department.create', { details: department.name });
+        return sendJson(res, 201, department);
       }
 
       if (req.method === 'POST' && path === '/api/users') {
@@ -892,6 +914,18 @@ export function createRouter(baseRepos, options = {}) {
         if (!await requireEntryAction(req, res, entryId, 'canRevealPassword')) return true;
         await repos.activity.log('entry.reveal_password', { entryId });
         return sendJson(res, 200, { password: await repos.entries.revealPassword(entryId) });
+      }
+
+      const credentialRevealMatch = path.match(/^\/api\/entries\/([^/]+)\/credentials\/([^/]+)\/reveal-password$/);
+      if (credentialRevealMatch && req.method === 'POST') {
+        const entryId = decodeURIComponent(credentialRevealMatch[1]);
+        const credentialId = decodeURIComponent(credentialRevealMatch[2]);
+        if (!await requireCredentialAction(req, res, entryId, credentialId, 'canRevealPassword')) return true;
+        await repos.activity.log('entry.credential_reveal_password', { entryId, details: credentialId });
+        const password = repos.entries.revealCredentialPassword
+          ? await repos.entries.revealCredentialPassword(entryId, credentialId)
+          : (await findEditableEntry(await requireUser(req, res), entryId))?.credentials?.find(item => String(item.id) === String(credentialId))?.password || '';
+        return sendJson(res, 200, { password });
       }
 
       const copyLogMatch = path.match(/^\/api\/entries\/([^/]+)\/copy-password-log$/);

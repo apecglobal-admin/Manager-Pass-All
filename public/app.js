@@ -12,6 +12,7 @@ const state = {
   selectedTypeId: 'All',
   autoLockMinutes: 15,
   revealCache: new Map(),
+  revealTimers: new Map(),
   mode: 'local',
   supabase: null,
   user: null,
@@ -20,6 +21,7 @@ const state = {
   vaultSalt: null,
   currentUser: null,
   users: [],
+  departments: [],
   projectMemberDraft: [],
   projectMemberProjectId: null,
   view: 'vault',
@@ -32,15 +34,14 @@ const state = {
   panelLayoutPreferenceTimer: null,
   sidebarCollapsed: false,
   sidebarWidth: 280,
-  detailPanelWidth: 520,
   expandedProjectIds: new Set()
 };
 
-const DEFAULT_SYSTEM_TYPES = ['Web', 'CMS', 'App', 'API', 'Server', 'Database', 'Hosting', 'Domain', 'Desktop', 'Mobile', 'Other'];
 const THEME_MODES = new Set(['light', 'mix', 'dark']);
 const MIX_THEME_VARIABLES = ['--accent', '--accent-light', '--accent-dim', '--accent2', '--body-glow-1', '--body-glow-2'];
 const SIDEBAR_COLLAPSED_WIDTH = 56;
 const PANEL_MIN_WIDTH = 10;
+const PASSWORD_REVEAL_DURATION_MS = 20_000;
 const runtimeConfig = window.APECGLOBAL_CONFIG || {};
 
 const $ = selector => document.querySelector(selector);
@@ -54,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function bindEvents() {
-  $('#loginForm').addEventListener('submit', login);
   $('#googleLoginBtn')?.addEventListener('click', loginWithGoogle);
   $('#lockBtn').addEventListener('click', logout);
   $('#usersNavBtn').addEventListener('click', showUsersPanel);
@@ -73,7 +73,7 @@ function bindEvents() {
   $('#mixAccent2Color')?.addEventListener('input', event => updateMixThemeColor('accent2', event.target.value));
   $('#newProjectBtn').addEventListener('click', () => openProjectDialog());
   $('#projectSystemForm')?.addEventListener('submit', saveProjectSystem);
-  $('#manageSystemTypesBtn')?.addEventListener('click', openEntryTypeDialog);
+  $('#manageEntryTypesBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#newEntryBtn').addEventListener('click', () => openEntryDialog());
   $('#toggleEntryDeleteModeBtn')?.addEventListener('click', toggleEntryDeleteMode);
   $('#deleteSelectedEntriesBtn')?.addEventListener('click', deleteSelectedEntries);
@@ -81,10 +81,20 @@ function bindEvents() {
   $('#addProjectMemberBtn')?.addEventListener('click', addSelectedProjectMember);
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
   $('#entryForm').addEventListener('submit', saveEntry);
+  $('#addCredentialBtn')?.addEventListener('click', () => addEntryCredentialRow());
   $('#entryTypeForm')?.addEventListener('submit', saveEntryType);
   $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
-  $('#userRoleSelect').addEventListener('change', syncRolePermissions);
+  $('#userRoleSelect').addEventListener('change', () => {
+    syncRolePermissions();
+    syncUserDepartmentVisibility();
+  });
+  $('#userDepartmentSelect')?.addEventListener('change', renderSelectedDepartmentLabels);
+  $('#userDepartmentDropdownBtn')?.addEventListener('click', toggleDepartmentDropdown);
+  $('#userDepartmentDropdown')?.addEventListener('click', toggleDepartmentOption);
+  $('#selectedDepartmentLabels')?.addEventListener('click', removeSelectedDepartmentLabel);
+  $('#toggleDepartmentQuickAddBtn')?.addEventListener('click', toggleDepartmentQuickAdd);
+  $('#saveDepartmentQuickAddBtn')?.addEventListener('click', saveDepartmentQuickAdd);
   $('#projectSearch').addEventListener('input', renderProjects);
   $('#globalSearch').addEventListener('input', globalSearch);
   $('#exportJsonBtn').addEventListener('click', () => download('/api/export/json?passwords=1', 'apecglobal-backup.json'));
@@ -102,6 +112,8 @@ function bindEvents() {
       closeThemeMenu();
       closeMixColorPopover();
     }
+    if (!event.target.closest('.department-picker')) closeDepartmentDropdown();
+    if (!event.target.closest('.item-menu-wrap')) closeItemMenus();
   });
   bindPanelResizeActions();
   syncSidebarState();
@@ -216,8 +228,6 @@ function applyUserPanelLayoutPreferences(preferences = state.currentUser?.prefer
   const panelLayout = preferences.panelLayout && typeof preferences.panelLayout === 'object' ? preferences.panelLayout : {};
   const sidebarWidth = panelWidthPreference(panelLayout.sidebarWidth, maxSidebarWidth());
   if (sidebarWidth) state.sidebarWidth = sidebarWidth;
-  const detailPanelWidth = panelWidthPreference(panelLayout.detailPanelWidth, maxDetailWidth());
-  if (detailPanelWidth) state.detailPanelWidth = detailPanelWidth;
   updatePanelWidths();
 }
 
@@ -230,8 +240,7 @@ function panelWidthPreference(value, max) {
 function currentPanelLayoutPreferences() {
   return {
     panelLayout: {
-      sidebarWidth: Math.round(state.sidebarWidth),
-      detailPanelWidth: Math.round(state.detailPanelWidth)
+      sidebarWidth: Math.round(state.sidebarWidth)
     }
   };
 }
@@ -340,33 +349,18 @@ function maxSidebarWidth() {
   return Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_MIN_WIDTH - PANEL_MIN_WIDTH);
 }
 
-function maxDetailWidth() {
-  const sidebarWidth = state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth;
-  return Math.max(PANEL_MIN_WIDTH, Math.floor(window.innerWidth - sidebarWidth - PANEL_MIN_WIDTH));
-}
-
 function updatePanelWidths() {
   state.sidebarWidth = clampNumber(state.sidebarWidth, PANEL_MIN_WIDTH, maxSidebarWidth());
-  state.detailPanelWidth = clampNumber(state.detailPanelWidth, PANEL_MIN_WIDTH, maxDetailWidth());
   appView?.style.setProperty('--project-sidebar-width', `${state.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : state.sidebarWidth}px`);
-  appView?.style.setProperty('--detail-panel-width', `${state.detailPanelWidth}px`);
 }
 
 function bindPanelResizeActions() {
   const sidebarHandle = $('#sidebarResizeHandle');
-  const detailHandle = $('#detailResizeHandle');
 
   sidebarHandle?.addEventListener('pointerdown', event => {
     if (state.sidebarCollapsed) return;
     startPanelResize(event, nextEvent => {
       state.sidebarWidth = clampNumber(nextEvent.clientX, PANEL_MIN_WIDTH, maxSidebarWidth());
-      updatePanelWidths();
-    });
-  });
-
-  detailHandle?.addEventListener('pointerdown', event => {
-    startPanelResize(event, nextEvent => {
-      state.detailPanelWidth = clampNumber(window.innerWidth - nextEvent.clientX, PANEL_MIN_WIDTH, maxDetailWidth());
       updatePanelWidths();
     });
   });
@@ -442,19 +436,6 @@ async function checkSession() {
   showLogin();
 }
 
-async function login(event) {
-  event.preventDefault();
-  const data = Object.fromEntries(new FormData(event.target));
-  try {
-    const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(data) });
-    state.currentUser = result.user;
-    $('#loginError').textContent = '';
-    await enterApp();
-  } catch (error) {
-    $('#loginError').textContent = error.message;
-  }
-}
-
 async function logout() {
   await api('/api/auth/logout', { method: 'POST' }).catch(() => null);
   if (state.supabase) await state.supabase.auth.signOut().catch(() => null);
@@ -471,6 +452,7 @@ async function enterApp() {
   appView.classList.remove('hidden');
   applyUserThemePreferences();
   await loadEntryTypes();
+  await loadDepartments();
   if (state.mode === 'local') {
     const settings = await api('/api/settings');
     state.autoLockMinutes = Number(settings.autoLockMinutes || 15);
@@ -488,10 +470,15 @@ async function loadEntryTypes() {
   fillEntryTypes();
 }
 
+async function loadDepartments() {
+  state.departments = await api('/api/departments');
+  fillDepartmentOptions();
+}
+
 function showLogin() {
   appView.classList.add('hidden');
   loginView.classList.remove('hidden');
-  state.revealCache.clear();
+  clearRevealCache();
   state.view = 'vault';
 }
 
@@ -570,15 +557,26 @@ async function loadEntries() {
     renderEntries();
     return;
   }
-  await loadProjectSystems();
-  renderProjects();
-  state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
-  pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
-  if (!state.entries.some(entry => entry.id === state.selectedEntryId)) {
-    state.selectedEntryId = state.entries[0]?.id || null;
+  try {
+    await loadProjectSystems();
+  } catch (error) {
+    state.projectSystems = [];
+    state.selectedSystemId = null;
+    toast(error.message);
   }
-  renderHeader();
-  renderEntries();
+  renderProjects();
+  try {
+    state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
+    pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
+    state.selectedEntryId = null;
+  } catch (error) {
+    state.entries = [];
+    state.selectedEntryId = null;
+    toast(error.message);
+  } finally {
+    renderHeader();
+    renderEntries();
+  }
 }
 
 async function loadProjectSystems(projectId = state.selectedProjectId) {
@@ -606,37 +604,93 @@ function renderProjects() {
   $('#projectList').innerHTML = state.projects
     .filter(project => project.name.toLowerCase().includes(query))
     .map(project => `
+      <div class="project-node">
       <div class="project-chip ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-id="${project.id}" data-drag-project="${project.id}" draggable="${isAdmin() ? 'true' : 'false'}">
         <span class="chip-avatar">${projectIcon(project.name)}</span>
         <strong>${escapeHtml(project.name)}</strong>
-        <span class="chip-actions">
-          ${can('users.manage') ? `<button class="chip-btn" type="button" title="Thành viên" data-project-members="${project.id}">${svgIcon('users')}</button>` : ''}
-          ${isAdmin() ? `<button class="chip-btn" type="button" title="Sửa" data-edit-project="${project.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa" data-delete-project="${project.id}">${svgIcon('trash')}</button>` : ''}
-        </span>
+        ${can('users.manage') || isAdmin() ? `
+          <div class="item-menu-wrap account-menu-wrap">
+            <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu dự án" title="Thao tác">...</button>
+            <div class="item-action-menu account-action-menu" role="menu">
+              ${can('users.manage') ? `<button type="button" role="menuitem" data-project-members="${project.id}">${svgIcon('users')} Thành viên</button>` : ''}
+              ${isAdmin() ? `<button type="button" role="menuitem" data-edit-project="${project.id}">${svgIcon('edit')} Sửa</button><button type="button" role="menuitem" class="danger" data-delete-project="${project.id}">${svgIcon('trash')} Xóa</button>` : ''}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+      ${renderSystemSubmenu(project)}
       </div>
     `).join('');
-  document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async () => {
+  document.querySelectorAll('.project-chip').forEach(item => item.addEventListener('click', async event => {
+    if (event.target.closest('.item-menu-wrap')) return;
     state.view = 'vault';
     if (String(state.selectedProjectId) !== String(item.dataset.id)) state.selectedSystemId = null;
     state.selectedProjectId = item.dataset.id;
-    state.revealCache.clear();
+    clearRevealCache();
+    state.expandedProjectIds.add(String(state.selectedProjectId));
     renderProjects();
     await loadEntries();
   }));
   document.querySelectorAll('[data-edit-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     openProjectDialog(state.projects.find(project => String(project.id) === String(button.dataset.editProject)));
   }));
   document.querySelectorAll('[data-project-members]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     openProjectMembersDialog(state.projects.find(project => String(project.id) === String(button.dataset.projectMembers)));
   }));
   document.querySelectorAll('[data-delete-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    closeItemMenus();
     deleteProject(button.dataset.deleteProject);
   }));
+  document.querySelectorAll('.project-chip .item-more-btn').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const wrap = button.closest('.item-menu-wrap');
+    const willOpen = !wrap?.classList.contains('menu-open');
+    closeItemMenus();
+    if (willOpen) wrap?.classList.add('menu-open');
+  }));
+  bindSystemSubmenuActions();
   bindProjectDragActions();
+  bindSystemDragActions();
   syncBulkActionButtons();
+}
+
+function renderSystemSubmenu(project) {
+  const projectId = String(project?.id || '');
+  const expanded = projectId && (state.expandedProjectIds.has(projectId) || String(state.selectedProjectId) === projectId);
+  if (!expanded) return '';
+  const systems = String(state.selectedProjectId) === projectId
+    ? state.projectSystems
+    : (state.projectSystemsByProjectId[projectId] || []);
+  const addButton = can('users.manage')
+    ? `<button class="add-system-inline" type="button" data-open-system-dialog data-system-project-id="${escapeAttr(projectId)}">+ Thêm hệ thống</button>`
+    : '';
+  const systemItems = systems.length
+    ? systems.map(system => {
+      const active = String(system.id) === String(state.selectedSystemId) && String(state.selectedProjectId) === projectId;
+      return `
+        <button type="button" class="system-chip ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${escapeAttr(projectId)}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+          <span class="system-chip-main">
+            <span>${escapeHtml(system.name)}</span>
+          </span>
+          ${can('users.manage') ? `
+            <span class="item-menu-wrap account-menu-wrap system-chip-actions">
+              <span class="item-more-btn account-more-btn" role="button" aria-label="Mở menu hệ thống" title="Thao tác">...</span>
+              <span class="item-action-menu account-action-menu" role="menu">
+                <span role="menuitem" data-edit-system="${system.id}">${svgIcon('edit')} Sửa</span>
+                <span role="menuitem" class="danger" data-delete-system="${system.id}">${svgIcon('trash')} Xóa</span>
+              </span>
+            </span>
+          ` : ''}
+        </button>
+      `;
+    }).join('')
+    : '<div class="system-empty">Chưa có hệ thống</div>';
+  return `<div class="system-submenu">${systemItems}${addButton}</div>`;
 }
 
 async function activateProjectForSystemAction(projectId) {
@@ -664,9 +718,9 @@ function pruneSet(set, allowedValues) {
 
 function syncBulkActionButtons() {
   const entryToggle = $('#toggleEntryDeleteModeBtn');
-  entryToggle?.classList.toggle('hidden', !visibleEntries().some(entry => entry.permissions?.canDelete));
+  entryToggle?.classList.add('hidden');
   if (entryToggle) entryToggle.textContent = state.bulkEntryMode ? 'Hủy chọn account' : 'Chọn xóa account';
-  $('#deleteSelectedEntriesBtn')?.classList.toggle('hidden', !state.bulkEntryMode || state.selectedEntryIds.size === 0);
+  $('#deleteSelectedEntriesBtn')?.classList.add('hidden');
 }
 
 function toggleEntryDeleteMode() {
@@ -777,16 +831,21 @@ function renderHeader() {
   const project = currentProject();
   const system = currentSystem();
   const missingSystems = Boolean(project && !state.projectSystems.length);
-  $('#newEntryBtn').disabled = !project || missingSystems || !canCreateEntry();
-  $('#newEntryBtn').title = missingSystems
-    ? 'Tạo hệ thống trước khi thêm account'
-    : '';
+  const canShowNewEntry = Boolean(project && !missingSystems && canCreateEntry());
+  $('#newEntryBtn')?.classList.toggle('hidden', !canShowNewEntry);
+  const newEntryButton = $('#newEntryBtn');
+  if (newEntryButton) {
+    newEntryButton.disabled = !canShowNewEntry;
+    newEntryButton.title = missingSystems
+      ? 'Tạo hệ thống trước khi thêm account'
+      : '';
+  }
   const title = $('#currentProjectName');
   const meta = $('#currentProjectMeta');
   if (title) title.textContent = project?.name || 'Tất cả dự án';
   if (meta) {
     const systemName = system ? system.name : 'He thong';
-    meta.textContent = `${visibleEntries().length} muc - ${systemName}`;
+    meta.textContent = `${state.projectSystems.length} hệ thống - ${systemName}`;
   }
   const search = $('#globalSearch');
   if (search) search.placeholder = project ? `Tìm trong ${project.name}...` : 'Tìm account, URL, username...';
@@ -842,9 +901,7 @@ function canCreateEntry() {
   const project = currentProject();
   if (!project) return false;
   if (!state.projectSystems.length) return false;
-  if (!state.selectedSystemId) return false;
-  if (state.currentUser?.role === 'Admin') return true;
-  return Boolean(permissionForProjectSystem(state.selectedSystemId, project)?.canCreate);
+  return Boolean(firstCreatableSystemId());
 }
 
 function entryTypeOptionsForEntry(entry = {}) {
@@ -885,7 +942,7 @@ function firstCreatableEntryTypeId() {
 
 function firstCreatableSystemId() {
   if (state.selectedSystemId && state.projectSystems.some(system => String(system.id) === String(state.selectedSystemId))) return state.selectedSystemId;
-  return '';
+  return isAdmin() ? state.projectSystems[0]?.id || '' : state.projectSystems.find(system => permissionForProjectSystem(system.id)?.canCreate)?.id || '';
 }
 
 function renderStats() {
@@ -914,31 +971,12 @@ function fillEntrySystems(systems = state.projectSystems) {
   const select = $('#entrySystemSelect');
   if (!select) return;
   if (select.tagName !== 'SELECT') return;
-  select.innerHTML = systems.map(system => `<option value="${system.id}">${escapeHtml(system.name)} (${escapeHtml(system.type || 'Web')})</option>`).join('');
-}
-
-function syncEntryTypeWithSystem({ force = false } = {}) {
-  const systemSelect = $('#entrySystemSelect');
-  const typeSelect = $('#entryTypeSelect');
-  if (!systemSelect || !typeSelect) return;
-  const system = state.projectSystems.find(item => String(item.id) === String(systemSelect.value));
-  if (!system?.type) return;
-  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system.type).toLowerCase());
-  if (!matchingType) return;
-  const hasMatchingOption = Array.from(typeSelect.options).some(option => String(option.value) === String(matchingType.id));
-  if (!hasMatchingOption) return;
-  if (force || !typeSelect.value) typeSelect.value = matchingType.id;
+  select.innerHTML = systems.map(system => `<option value="${system.id}">${escapeHtml(system.name)}</option>`).join('');
 }
 
 function systemForEntry(entry = {}) {
   const systemId = entry.systemId || entry.projectSystemId;
   return state.projectSystems.find(system => String(system.id) === String(systemId)) || null;
-}
-
-function entryTypeIdForSystem(systemId) {
-  const system = state.projectSystems.find(item => String(item.id) === String(systemId));
-  const matchingType = state.entryTypes.find(type => String(type.name).toLowerCase() === String(system?.type || '').toLowerCase());
-  return matchingType?.id || state.entryTypes[0]?.id || '';
 }
 
 function entryMatchesSelectedType(entry) {
@@ -958,24 +996,28 @@ function visibleEntries(rows = state.entries) {
   return rows.filter(entryMatchesSelectedSystem);
 }
 
-function renderEntries(rows = state.entries) {
-  const filtered = visibleEntries(rows);
-  const emptyState = $('#emptyState');
-  emptyState.innerHTML = emptyEntryHtml(filtered, rows);
-  const hasSystemColumn = Boolean(currentProject() && state.projectSystems.length);
-  emptyState.classList.toggle('hidden', hasSystemColumn || filtered.length > 0);
-  $('#entryList').innerHTML = hasSystemColumn ? renderSystemSections(rows) : '';
-  if (!filtered.some(entry => String(entry.id) === String(state.selectedEntryId))) {
-    state.selectedEntryId = filtered[0]?.id || null;
-  }
-  renderDetail(filtered.find(entry => String(entry.id) === String(state.selectedEntryId)) || null);
-  bindSystemColumnActions();
-  bindRowActions();
-  bindSystemDragActions();
-  $('#createFirstSystemBtn')?.addEventListener('click', () => openProjectSystemDialog());
+function firstVisibleEntry(entries = visibleEntries()) {
+  return entries[0] || null;
 }
 
-function renderSystemSections(rows = state.entries) {
+function selectedVisibleEntry(entries = visibleEntries()) {
+  if (state.selectedEntryId) {
+    const selected = entries.find(item => String(item.id) === String(state.selectedEntryId));
+    if (selected) return selected;
+  }
+  return firstVisibleEntry(entries);
+}
+
+function renderEntries(rows = state.entries) {
+  const filtered = visibleEntries(rows);
+  const selectedEntry = selectedVisibleEntry(filtered);
+  state.selectedEntryId = selectedEntry?.id || null;
+  renderProjects();
+  renderDetail(selectedEntry);
+  bindRowActions();
+}
+
+function unusedSystemSections(rows = state.entries) {
   const addButton = can('users.manage')
     ? '<button class="btn-outline system-add-btn" type="button" data-open-system-dialog>＋ Thêm hệ thống</button>'
     : '';
@@ -988,42 +1030,84 @@ function renderSystemSections(rows = state.entries) {
       ${state.projectSystems.map(system => {
         const active = String(system.id) === String(state.selectedSystemId);
         return `
-          <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
-            <header class="system-section-head">
-              <div class="system-section-title">
-                <strong>${escapeHtml(system.name)}</strong>
-                <small>${escapeHtml(system.type || 'System')}</small>
-              </div>
-              ${can('users.manage') ? `<div class="system-section-actions"><button class="chip-btn" type="button" title="Sửa hệ thống" data-edit-system="${system.id}">${svgIcon('edit')}</button><button class="chip-btn danger" type="button" title="Xóa hệ thống" data-delete-system="${system.id}">${svgIcon('trash')}</button></div>` : ''}
-            </header>
-          </section>
+          <div class="system-group ${active ? 'active' : ''}">
+            <section class="system-section ${active ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-system-project-id="${state.selectedProjectId}" data-system-filter="${system.id}" data-drag-system="${system.id}" draggable="${isAdmin() ? 'true' : 'false'}">
+              <header class="system-section-head">
+                <div class="system-section-title">
+                  <strong>${escapeHtml(system.name)}</strong>
+                </div>
+                ${can('users.manage') ? `
+                  <div class="item-menu-wrap account-menu-wrap system-section-actions">
+                    <button type="button" class="item-more-btn account-more-btn" aria-label="Mở menu hệ thống" title="Thao tác">...</button>
+                    <div class="item-action-menu account-action-menu" role="menu">
+                      <button type="button" role="menuitem" data-edit-system="${system.id}">${svgIcon('edit')} Sửa</button>
+                      <button type="button" role="menuitem" class="danger" data-delete-system="${system.id}">${svgIcon('trash')} Xóa</button>
+                    </div>
+                  </div>
+                ` : ''}
+              </header>
+            </section>
+          </div>
         `;
       }).join('')}
     </div>
   `;
 }
 
-function bindSystemColumnActions() {
-  document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', event => {
-    if (event.target.closest('[data-edit-system], [data-delete-system]')) return;
+function bindSystemSubmenuActions() {
+  document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', async event => {
+    if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry], .item-menu-wrap')) return;
+    const projectId = section.dataset.systemProjectId;
+    if (projectId && String(projectId) !== String(state.selectedProjectId)) {
+      state.selectedProjectId = projectId;
+      state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || state.projectSystems;
+    }
     state.selectedSystemId = section.dataset.systemFilter;
-    state.selectedEntryId = visibleEntries()[0]?.id || null;
-    state.revealCache.clear();
-    renderEntries();
+    state.selectedEntryId = null;
+    clearRevealCache();
+    state.expandedProjectIds.add(String(state.selectedProjectId));
+    await loadEntries();
     renderHeader();
+  }));
+  document.querySelectorAll('.system-submenu .item-more-btn').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const wrap = button.closest('.item-menu-wrap');
+    const willOpen = !wrap?.classList.contains('menu-open');
+    closeItemMenus();
+    if (willOpen) wrap?.classList.add('menu-open');
   }));
   document.querySelectorAll('[data-edit-system]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
-    const system = state.projectSystems.find(item => String(item.id) === String(button.dataset.editSystem));
+    closeItemMenus();
+    const projectId = button.closest('[data-system-project-id]')?.dataset.systemProjectId || state.selectedProjectId;
+    const systems = state.projectSystemsByProjectId[String(projectId)] || state.projectSystems;
+    const system = systems.find(item => String(item.id) === String(button.dataset.editSystem));
+    if (projectId && String(projectId) !== String(state.selectedProjectId)) {
+      state.selectedProjectId = projectId;
+      state.projectSystems = systems;
+    }
     if (system) openProjectSystemDialog(system);
   }));
   document.querySelectorAll('[data-delete-system]').forEach(button => button.addEventListener('click', async event => {
     event.stopPropagation();
+    closeItemMenus();
+    const projectId = button.closest('[data-system-project-id]')?.dataset.systemProjectId;
+    if (projectId && String(projectId) !== String(state.selectedProjectId)) {
+      state.selectedProjectId = projectId;
+      state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || state.projectSystems;
+    }
     const systemId = button.dataset.deleteSystem;
     await deleteProjectSystem(systemId);
   }));
   document.querySelectorAll('[data-open-system-dialog]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
+    const projectId = button.dataset.systemProjectId;
+    if (projectId && String(projectId) !== String(state.selectedProjectId)) {
+      state.selectedProjectId = projectId;
+      state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || state.projectSystems;
+      renderHeader();
+      renderProjects();
+    }
     openProjectSystemDialog();
   }));
 }
@@ -1064,7 +1148,8 @@ function entryListSubtitle(entry) {
 }
 
 function bindRowActions() {
-  document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', event => {
+    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry], .item-menu-wrap')) return;
     const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
     state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
@@ -1072,10 +1157,25 @@ function bindRowActions() {
     renderHeader();
   }));
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
-  document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal)));
-  document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass)));
-  document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)))));
-  document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', () => deleteEntry(button.dataset.delete)));
+  document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal, button.dataset.credentialReveal || '')));
+  document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass, button.dataset.credentialCopy || '')));
+  document.querySelectorAll('#detailPanel .item-more-btn').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const wrap = button.closest('.item-menu-wrap');
+    const willOpen = !wrap?.classList.contains('menu-open');
+    closeItemMenus();
+    if (willOpen) wrap?.classList.add('menu-open');
+  }));
+  document.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    closeItemMenus();
+    openEntryDialog(state.entries.find(entry => String(entry.id) === String(button.dataset.edit)));
+  }));
+  document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    closeItemMenus();
+    deleteEntry(button.dataset.delete);
+  }));
   document.querySelectorAll('[data-select-entry]').forEach(input => input.addEventListener('click', event => {
     event.stopPropagation();
     toggleSetValue(state.selectedEntryIds, input.dataset.selectEntry, input.checked);
@@ -1083,14 +1183,17 @@ function bindRowActions() {
   }));
   document.querySelectorAll('.close-detail').forEach(button => button.addEventListener('click', () => {
     const aside = $('#detailAside');
-    if (aside) aside.classList.remove('open');
+    if (aside) aside.classList.add('open');
   }));
   syncBulkActionButtons();
 }
 
+function closeItemMenus() {
+  document.querySelectorAll('.item-menu-wrap.menu-open').forEach(menu => menu.classList.remove('menu-open'));
+}
+
 function renderDetail(entry) {
   const aside = $('#detailAside');
-  if (state.view === 'users') { if (aside) aside.classList.add('open'); return renderUsersPanel(); }
   if (!entry) {
     $('#detailPanel').className = 'detail-empty';
     $('#detailPanel').innerHTML = `
@@ -1098,12 +1201,11 @@ function renderDetail(entry) {
       <h3>Chọn một account</h3>
       <p>Chi tiết sẽ hiển thị ở đây</p>
     `;
-    if (aside) aside.classList.remove('open');
+    if (aside) aside.classList.add('open');
     return;
   }
   if (aside) aside.classList.add('open');
 
-  const password = state.revealCache.get(entry.id) || '************';
   const canEditEntry = Boolean(entry.permissions?.canEdit);
   const canDeleteEntry = Boolean(entry.permissions?.canDelete);
   const canRevealEntryPassword = Boolean(entry.permissions?.canRevealPassword);
@@ -1124,25 +1226,8 @@ function renderDetail(entry) {
       </div>
     </header>
 
-    <section class="secret-card">
-      <div class="secret-row">
-        <span class="secret-icon">${svgIcon('user')}</span>
-        <div>
-          <small>Email</small>
-          <strong>${canViewUsername ? escapeHtml(entry.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
-        </div>
-        ${canViewUsername && entry.username ? `<button class="ghost-btn" data-copy="${escapeAttr(entry.username)}">${svgIcon('copy')} Copy</button>` : ''}
-      </div>
-      <div class="secret-row">
-        <span class="secret-icon">${svgIcon('key')}</span>
-        <div>
-          <small>Mật khẩu</small>
-          <strong class="password-text">${escapeHtml(password)}</strong>
-        </div>
-        ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-        <button class="ghost-btn" data-reveal="${entry.id}">${svgIcon('eye')} Xem</button>
-        <button class="ghost-btn" data-copy-pass="${entry.id}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
-      </div>
+    <section class="secret-card credential-detail-list">
+      ${credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword })}
     </section>
 
     <section class="secret-card single">
@@ -1231,7 +1316,6 @@ async function openProjectSystemDialog(system = {}) {
   form.id.value = system.id || '';
   form.projectId.value = project.id;
   form.name.value = system.name || '';
-  renderProjectSystemTypeOptions(system.type || 'Web', { includeSelected: Boolean(system.id) });
   form.description.value = system.description || '';
   form.status.value = system.status || 'Active';
   $('#projectSystemDialog').showModal();
@@ -1269,41 +1353,9 @@ function resetProjectSystemForm(projectId = state.selectedProjectId) {
   form.id.value = '';
   form.projectId.value = projectId || '';
   form.name.value = '';
-  renderProjectSystemTypeOptions('Web');
   form.description.value = '';
   form.status.value = 'Active';
   $('#saveProjectSystemBtn').textContent = 'Lưu hệ thống';
-}
-
-function projectSystemTypeOptions(selectedType = '', { includeSelected = false } = {}) {
-  const byName = new Map();
-  const configuredTypes = new Map(state.entryTypes
-    .map(type => [String(type.name || '').trim().toLowerCase(), type])
-    .filter(([name]) => Boolean(name)));
-  const activeTypes = state.entryTypes.filter(type => type.isActive !== false).map(type => type.name);
-  const defaultTypes = DEFAULT_SYSTEM_TYPES.filter(type => {
-    const configured = configuredTypes.get(String(type).toLowerCase());
-    return !configured || configured.isActive !== false;
-  });
-  [...defaultTypes, ...activeTypes]
-    .map(type => String(type || '').trim())
-    .filter(Boolean)
-    .forEach(type => {
-      const key = type.toLowerCase();
-      if (!byName.has(key)) byName.set(key, type);
-    });
-  const selected = String(selectedType || '').trim();
-  if (includeSelected && selected && !byName.has(selected.toLowerCase())) byName.set(selected.toLowerCase(), selected);
-  return [...byName.values()];
-}
-
-function renderProjectSystemTypeOptions(selectedType = 'Web', options = {}) {
-  const select = $('#projectSystemTypeSelect');
-  if (!select) return;
-  const selected = String(selectedType || 'Web').trim();
-  const types = projectSystemTypeOptions(selected, options);
-  select.innerHTML = types.map(type => `<option value="${escapeAttr(type)}">${escapeHtml(type)}</option>`).join('');
-  select.value = types.find(type => type.toLowerCase() === selected.toLowerCase()) || types[0] || '';
 }
 
 async function deleteProjectSystem(id) {
@@ -1373,7 +1425,7 @@ function renderProjectMemberOptions() {
   const selected = new Set(state.projectMemberDraft.map(member => String(member.userId)));
   const options = state.users
     .filter(user => user.role !== 'Admin' && !selected.has(String(user.id)))
-    .map(user => `<option value="${user.id}">${escapeHtml(user.displayName || user.username)} - ${escapeHtml(user.username)}</option>`)
+    .map(user => `<option value="${user.id}">${escapeHtml(user.displayName || user.username)} - ${escapeHtml(user.username)} - ${escapeHtml(userDepartmentText(user))}</option>`)
     .join('');
   select.innerHTML = options || '<option value="">Không còn user để thêm</option>';
   select.disabled = !options;
@@ -1389,6 +1441,7 @@ function renderProjectMemberList() {
       <div>
         <strong>${escapeHtml(member.displayName || member.username)}</strong>
         <small>${escapeHtml(member.username || '')} - ${escapeHtml(member.role || '')}</small>
+        <div class="department-chip-row">${userDepartmentChips(member)}</div>
       </div>
       <div class="user-actions">
         <button type="button" data-edit-member="${member.userId}">Quyền trong dự án</button>
@@ -1416,6 +1469,8 @@ function addSelectedProjectMember() {
     displayName: user.displayName,
     role: user.role,
     status: user.status,
+    departmentId: user.departmentId,
+    departmentIds: user.departmentIds || (user.departmentId ? [user.departmentId] : []),
     detailedPermissions: defaultProjectMemberPermissions()
   };
   state.projectMemberDraft.push(member);
@@ -1462,9 +1517,9 @@ async function deleteProject(id) {
 async function openEntryDialog(entry = {}) {
   const editing = Boolean(entry.id);
   if (!editing && !state.projectSystems.length) return toast('Tạo hệ thống trước khi thêm account');
-  if (!editing && !state.selectedSystemId) return toast('Chọn một hệ thống cụ thể trước khi thêm account');
   if (editing && !entry.permissions?.canEdit) return toast('Bạn không có quyền sửa account này');
   if (!editing && !canCreateEntry()) return toast('Bạn không có quyền tạo account trong dự án này');
+  if (!editing && !state.selectedSystemId) state.selectedSystemId = firstCreatableSystemId();
   let formEntry = entry;
   if (editing) {
     try {
@@ -1485,16 +1540,139 @@ async function openEntryDialog(entry = {}) {
   form.name.value = formEntry.name || '';
   form.systemId.value = formEntry.id ? (formEntry.systemId || formEntry.projectSystemId || '') : firstCreatableSystemId();
   form.typeId.value = formEntry.id ? entryTypeIdForEntry(formEntry) : firstCreatableEntryTypeId();
-  if (!editing) syncEntryTypeWithSystem({ force: true });
   form.environment.value = formEntry.environment || 'Production';
   form.url.value = formEntry.url || '';
-  form.username.value = formEntry.username || '';
-  form.password.value = '';
+  renderEntryCredentials(formEntry.credentials?.length ? formEntry.credentials : defaultEntryCredentials(formEntry));
   form.tags.value = (formEntry.tags || []).join(', ');
   form.notes.value = formEntry.notes || '';
-  form.status.value = formEntry.status || 'Active';
   $('#entryDialog').showModal();
   focusDialogField('#entryDialog', 'input[name="name"]');
+}
+
+function defaultEntryCredentials(entry = {}) {
+  if (entry.id || entry.username) {
+    return [{
+      id: '',
+      departmentId: currentCredentialDepartmentId(),
+      username: entry.username || '',
+      password: ''
+    }];
+  }
+  return [{ id: '', departmentId: currentCredentialDepartmentId(), username: '', password: '' }];
+}
+
+function currentCredentialDepartmentId() {
+  if (isAdmin()) return state.departments[0]?.id || '';
+  return state.currentUser?.departmentIds?.[0] || state.currentUser?.departmentId || '';
+}
+
+function credentialDepartmentOptions(selectedId = '') {
+  const departments = state.departments.length
+    ? state.departments
+    : state.currentUser?.departmentIds?.length
+      ? state.currentUser.departmentIds.map(id => ({ id, name: departmentName(id) }))
+      : state.currentUser?.departmentId
+        ? [{ id: state.currentUser.departmentId, name: 'Phòng ban của tôi' }]
+      : [];
+  const options = ['<option value="">Chưa phân phòng ban</option>']
+    .concat(departments.map(department => `<option value="${escapeAttr(department.id)}">${escapeHtml(department.name)}</option>`));
+  return options.join('').replace(`value="${escapeAttr(selectedId)}"`, `value="${escapeAttr(selectedId)}" selected`);
+}
+
+function credentialDepartmentName(credential = {}) {
+  if (credential.departmentName) return credential.departmentName;
+  if (credential.department?.name) return credential.department.name;
+  if (credential.departmentId) return departmentName(credential.departmentId);
+  return 'Chưa phân phòng ban';
+}
+
+function renderEntryCredentials(credentials = []) {
+  const rows = $('#credentialRows');
+  if (!rows) return;
+  rows.innerHTML = credentials.map(credential => credentialRowHtml(credential)).join('');
+  rows.querySelectorAll('[data-remove-credential]').forEach(button => button.addEventListener('click', () => {
+    button.closest('.credential-row')?.remove();
+    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
+  }));
+}
+
+function credentialRowHtml(credential = {}) {
+  const rowId = escapeAttr(credential.id || '');
+  return `
+    <div class="credential-row" data-credential-id="${rowId}">
+      <label><span class="label-text">Phòng ban</span><select data-credential-department>${credentialDepartmentOptions(credential.departmentId || '')}</select></label>
+      <label><span class="label-text">Username</span><input data-credential-username value="${escapeAttr(credential.username || '')}" placeholder="email / user"></label>
+      <label><span class="label-text">Password</span><input data-credential-password type="password" placeholder="Để trống nếu không đổi"></label>
+      <button type="button" class="icon-danger credential-remove" data-remove-credential title="Xóa user">${svgIcon('trash')}</button>
+    </div>
+  `;
+}
+
+function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }) {
+  const credentials = entry.credentials?.length
+    ? entry.credentials
+    : [{ id: '', entryId: entry.id, departmentId: '', username: entry.username || '' }];
+  return credentials.map(credential => {
+    const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
+    const revealState = revealedPasswordState(credentialKey);
+    const password = revealState?.password || '************';
+    const revealAction = revealState
+      ? `<span class="reveal-countdown" data-reveal-countdown="${escapeAttr(credentialKey)}">Ẩn sau ${revealSecondsRemaining(revealState)}s</span>`
+      : `<button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>`;
+    return `
+      <div class="credential-detail-item">
+        <div class="credential-department-title">${escapeHtml(credentialDepartmentName(credential))}</div>
+        <div class="secret-row">
+          <span class="secret-icon">${svgIcon('user')}</span>
+          <div>
+            <small>Username</small>
+            <strong>${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+          </div>
+          ${canViewUsername && credential.username ? `<button class="ghost-btn" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
+        </div>
+        <div class="secret-row">
+          <span class="secret-icon">${svgIcon('key')}</span>
+          <div>
+            <small>Mật khẩu</small>
+            <strong class="password-text">${escapeHtml(password)}</strong>
+          </div>
+          ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
+          ${revealAction}
+          <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function addEntryCredentialRow(credential = {}) {
+  const rows = $('#credentialRows');
+  if (!rows) return;
+  rows.insertAdjacentHTML('beforeend', credentialRowHtml({
+    departmentId: currentCredentialDepartmentId(),
+    ...credential
+  }));
+  const row = rows.lastElementChild;
+  row?.querySelector('[data-remove-credential]')?.addEventListener('click', () => {
+    row.remove();
+    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
+  });
+  row?.querySelector('[data-credential-username]')?.focus();
+}
+
+function collectEntryCredentials() {
+  return [...document.querySelectorAll('#credentialRows .credential-row')]
+    .map(row => {
+      const password = row.querySelector('[data-credential-password]')?.value || '';
+      const credential = {
+        id: row.dataset.credentialId || '',
+        departmentId: row.querySelector('[data-credential-department]')?.value || null,
+        username: row.querySelector('[data-credential-username]')?.value.trim() || ''
+      };
+      if (password || !credential.id) credential.password = password;
+      return credential;
+    })
+    .filter(credential => credential.username || credential.password || credential.id);
 }
 
 async function saveEntry(event) {
@@ -1504,8 +1682,12 @@ async function saveEntry(event) {
   const id = data.id;
   delete data.id;
   data.projectId = state.selectedProjectId;
-  data.typeId = data.typeId || entryTypeIdForSystem(data.systemId);
+  data.typeId = data.typeId || firstCreatableEntryTypeId();
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+  data.status = 'Active';
+  data.credentials = collectEntryCredentials();
+  data.username = data.credentials[0]?.username || '';
+  if (data.credentials[0]?.password !== undefined) data.password = data.credentials[0].password;
   if (!data.password && id) delete data.password;
   try {
     await api(id ? `/api/entries/${id}` : '/api/entries', {
@@ -1521,24 +1703,95 @@ async function saveEntry(event) {
   await loadEntries();
 }
 
-async function revealPassword(id) {
-  const entry = state.entries.find(item => String(item.id) === String(id));
-  if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền xem mật khẩu');
-  const result = await api(`/api/entries/${id}/reveal-password`, { method: 'POST' });
-  state.revealCache.set(id, result.password);
-  renderEntries();
+function clearRevealCache() {
+  state.revealTimers.forEach(timer => clearInterval(timer));
+  state.revealTimers.clear();
+  state.revealCache.clear();
 }
 
-async function copyPassword(id) {
+function revealedPasswordState(cacheKey) {
+  const revealState = state.revealCache.get(cacheKey);
+  if (!revealState) return null;
+  if (revealState.expiresAt <= Date.now()) {
+    state.revealCache.delete(cacheKey);
+    clearRevealTimer(cacheKey);
+    return null;
+  }
+  return revealState;
+}
+
+function revealedPassword(cacheKey) {
+  return revealedPasswordState(cacheKey)?.password || '';
+}
+
+function revealSecondsRemaining(revealState) {
+  return Math.max(0, Math.ceil((revealState.expiresAt - Date.now()) / 1000));
+}
+
+function setRevealedPassword(cacheKey, password) {
+  state.revealCache.set(cacheKey, {
+    password: password || '',
+    expiresAt: Date.now() + PASSWORD_REVEAL_DURATION_MS
+  });
+  renderEntries();
+  startRevealCountdown(cacheKey);
+}
+
+function clearRevealTimer(cacheKey) {
+  const timer = state.revealTimers.get(cacheKey);
+  if (timer) clearInterval(timer);
+  state.revealTimers.delete(cacheKey);
+}
+
+function startRevealCountdown(cacheKey) {
+  clearRevealTimer(cacheKey);
+  const tick = () => {
+    const revealState = revealedPasswordState(cacheKey);
+    if (!revealState) {
+      state.revealCache.delete(cacheKey);
+      clearRevealTimer(cacheKey);
+      renderEntries();
+      return;
+    }
+    document.querySelectorAll('[data-reveal-countdown]').forEach(label => {
+      if (label.dataset.revealCountdown === cacheKey) {
+        label.textContent = `Ẩn sau ${revealSecondsRemaining(revealState)}s`;
+      }
+    });
+  };
+  const timer = setInterval(tick, 1000);
+  state.revealTimers.set(cacheKey, timer);
+  tick();
+}
+
+async function revealPassword(id, credentialId = '') {
+  const entry = state.entries.find(item => String(item.id) === String(id));
+  if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền xem mật khẩu');
+  const path = credentialId
+    ? credentialRevealPath(id, credentialId)
+    : `/api/entries/${id}/reveal-password`;
+  const result = await api(path, { method: 'POST' });
+  setRevealedPassword(credentialId ? `${id}:${credentialId}` : id, result.password);
+}
+
+async function copyPassword(id, credentialId = '') {
   const entry = state.entries.find(item => String(item.id) === String(id));
   if (!entry?.permissions?.canRevealPassword) return toast('Bạn không có quyền copy mật khẩu');
-  let password = state.revealCache.get(id);
+  const cacheKey = credentialId ? `${id}:${credentialId}` : id;
+  let password = revealedPassword(cacheKey);
   if (!password) {
-    const result = await api(`/api/entries/${id}/reveal-password`, { method: 'POST' });
+    const path = credentialId
+      ? credentialRevealPath(id, credentialId)
+      : `/api/entries/${id}/reveal-password`;
+    const result = await api(path, { method: 'POST' });
     password = result.password || '';
   }
   await copyText(password);
   await api(`/api/entries/${id}/copy-password-log`, { method: 'POST' });
+}
+
+function credentialRevealPath(entryId, credentialId) {
+  return `/api/entries/${entryId}/credentials/${credentialId}/reveal-password`;
 }
 
 async function deleteEntry(id) {
@@ -1652,7 +1905,7 @@ function renderEntryTypeManager() {
         <button type="button" class="danger" data-delete-entry-type="${type.id}">Xóa</button>
       </div>
     </article>
-  `).join('') || '<p class="form-hint">Chưa có loại hệ thống.</p>';
+  `).join('') || '<p class="form-hint">Chưa có loại account.</p>';
   document.querySelectorAll('[data-edit-entry-type]').forEach(button => {
     button.addEventListener('click', () => editEntryType(button.dataset.editEntryType));
   });
@@ -1687,8 +1940,8 @@ async function toggleEntryType(id) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect(type.name);
-    toast(type.isActive ? 'Đã tắt loại hệ thống' : 'Đã bật loại hệ thống');
+    refreshEntryTypeSelect(type.id);
+    toast(type.isActive ? 'Đã tắt loại account' : 'Đã bật loại account');
   } catch (error) {
     toast(error.message);
   }
@@ -1697,14 +1950,14 @@ async function toggleEntryType(id) {
 async function deleteEntryType(id) {
   const type = state.entryTypes.find(item => String(item.id) === String(id));
   if (!type) return;
-  if (!confirm(`Xóa loại hệ thống "${type.name}"?`)) return;
+  if (!confirm(`Xóa loại account "${type.name}"?`)) return;
   try {
     await api(`/api/entry-types/${id}`, { method: 'DELETE' });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect();
+    refreshEntryTypeSelect();
     resetEntryTypeForm();
-    toast('Đã xóa loại hệ thống');
+    toast('Đã xóa loại account');
   } catch (error) {
     toast(error.message);
   }
@@ -1720,7 +1973,7 @@ async function saveEntryType(event) {
     sortOrder: form.sortOrder.value ? Number(form.sortOrder.value) : undefined,
     isActive: form.isActive.checked
   };
-  if (!payload.name) return toast('Tên loại hệ thống là bắt buộc');
+  if (!payload.name) return toast('Tên loại account là bắt buộc');
   try {
     await api(id ? `/api/entry-types/${id}` : '/api/entry-types', {
       method: id ? 'PATCH' : 'POST',
@@ -1728,18 +1981,21 @@ async function saveEntryType(event) {
     });
     await loadEntryTypes();
     renderEntryTypeManager();
-    refreshProjectSystemTypeSelect(payload.name);
+    refreshEntryTypeSelect(id || payload.name);
     resetEntryTypeForm();
-    toast(id ? 'Đã cập nhật loại hệ thống' : 'Đã thêm loại hệ thống');
+    toast(id ? 'Đã cập nhật loại account' : 'Đã thêm loại account');
   } catch (error) {
     toast(error.message);
   }
 }
 
-function refreshProjectSystemTypeSelect(preferredType = '') {
-  const select = $('#projectSystemTypeSelect');
+function refreshEntryTypeSelect(preferredType = '') {
+  const select = $('#entryTypeSelect');
   if (!select) return;
-  renderProjectSystemTypeOptions(preferredType || select.value || 'Web');
+  const currentValue = preferredType || select.value || firstCreatableEntryTypeId();
+  fillEntryTypes(entryTypeOptionsForEntry());
+  const option = Array.from(select.options).find(item => String(item.value) === String(currentValue));
+  if (option) select.value = option.value;
 }
 
 let autoLockTimer;
@@ -1766,7 +2022,7 @@ function isAdmin() {
 
 function applyPermissionUi() {
   $('#usersNavBtn')?.classList.toggle('hidden', !can('users.manage'));
-  const npb = $('#newProjectBtn'); if (npb) npb.disabled = !isAdmin();
+  const npb = $('#newProjectBtn'); npb?.classList.toggle('hidden', !isAdmin());
   const ib = $('#importBtn'); if (ib) ib.disabled = !isAdmin();
   const sjb = $('#saveJsonBtn'); if (sjb) sjb.disabled = !isAdmin();
   const ejb = $('#exportJsonBtn'); if (ejb) ejb.disabled = !isAdmin();
@@ -1792,12 +2048,33 @@ function renderCurrentUser() {
 
 async function showUsersPanel() {
   if (!can('users.manage')) return toast('Bạn không có quyền quản lý người dùng');
-  state.view = 'users';
+  await loadDepartments();
   state.users = await api('/api/users');
   renderUsersPanel();
+  $('#userManagementDialog').showModal();
 }
 
 function renderUsersPanel() {
+  const list = $('#userManagementList');
+  if (list) {
+    list.innerHTML = state.users.map(user => `
+      <article class="user-card">
+        <div>
+          <strong>${escapeHtml(user.displayName || user.username)}</strong>
+          <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
+        </div>
+        <span class="role-chip">${escapeHtml(user.role)}</span>
+        ${userDepartmentChips(user)}
+        <p>${permissionSummary(user)}</p>
+        <div class="user-actions">
+          <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
+          ${Number(user.id) === Number(state.currentUser?.id) ? '' : `<button data-delete-user="${user.id}">Xóa</button>`}
+        </div>
+      </article>
+    `).join('');
+    bindUserManagementActions();
+    return;
+  }
   const aside = $('#detailAside');
   if (aside) aside.classList.add('open');
   $('#detailPanel').className = 'detail-content users-panel';
@@ -1808,7 +2085,6 @@ function renderUsersPanel() {
         <p><span class="tag-dot"></span> Tài khoản nội bộ</p>
       </div>
       <div class="detail-actions">
-        <button id="addUserBtn" class="btn-accent">+ Thêm user</button>
         <button class="close-detail" title="Đóng">✕</button>
       </div>
     </header>
@@ -1820,24 +2096,29 @@ function renderUsersPanel() {
             <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
           </div>
           <span class="role-chip">${escapeHtml(user.role)}</span>
+          ${userDepartmentChips(user)}
           <p>${permissionSummary(user)}</p>
           <div class="user-actions">
             <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
-            ${['Invited', 'Expired'].includes(user.status) ? `<button data-invite-user="${user.id}">Gửi email mời</button>` : ''}
             ${Number(user.id) === Number(state.currentUser?.id) ? '' : `<button data-delete-user="${user.id}">Xóa</button>`}
           </div>
         </article>
       `).join('')}
     </section>
   `;
-  $('#addUserBtn').addEventListener('click', () => openUserDialog());
   document.querySelectorAll('[data-edit-user]').forEach(button => {
     button.addEventListener('click', () => openUserDialog(state.users.find(user => String(user.id) === String(button.dataset.editUser))));
   });
-  document.querySelectorAll('[data-invite-user]').forEach(button => {
-    button.addEventListener('click', () => resendUserInvite(button.dataset.inviteUser));
-  });
   document.querySelectorAll('[data-delete-user]').forEach(button => {
+    button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
+  });
+}
+
+function bindUserManagementActions() {
+  document.querySelectorAll('#userManagementDialog [data-edit-user]').forEach(button => {
+    button.addEventListener('click', () => openUserDialog(state.users.find(user => String(user.id) === String(button.dataset.editUser))));
+  });
+  document.querySelectorAll('#userManagementDialog [data-delete-user]').forEach(button => {
     button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
   });
 }
@@ -1855,33 +2136,207 @@ function permissionSummary(user) {
 }
 
 function openUserDialog(user = {}) {
+  if (!user.id) {
+    toast('User chỉ được tạo từ đăng nhập Google');
+    return;
+  }
   const form = $('#userForm');
-  const creating = !user.id;
-  const passwordField = form.password.closest('label');
-  const statusField = form.status.closest('label');
   const inviteHint = $('#userInviteHint');
   const saveButton = $('#saveUserBtn');
-  form.id.value = user.id || '';
+  form.id.value = user.id;
   form.username.value = user.username || '';
-  form.username.disabled = Boolean(user.id);
+  form.username.disabled = true;
   form.displayName.value = user.displayName || '';
-  form.password.value = '';
-  form.password.required = false;
-  passwordField?.classList.toggle('hidden', creating);
-  statusField?.classList.toggle('hidden', creating);
+  fillDepartmentOptions(user.departmentIds || (user.departmentId ? [user.departmentId] : []));
   if (inviteHint) {
-    if (creating) inviteHint.textContent = 'Nhập email Google của user. Khi lưu, hệ thống sẽ tạo tài khoản nội bộ và gửi email mời tải app.';
-    else if (user.status === 'Pending') inviteHint.textContent = 'Tài khoản Google này đang yêu cầu tham gia. Chuyển trạng thái sang Active và cấp quyền; hệ thống sẽ gửi email thông báo nếu đã cấu hình mail.';
+    if (user.status === 'Pending') inviteHint.textContent = 'Tài khoản Google này đang yêu cầu tham gia. Chuyển trạng thái sang Active và cấp quyền; hệ thống sẽ gửi email thông báo nếu đã cấu hình mail.';
     else inviteHint.textContent = 'Email đăng nhập là định danh dùng để map Google vào quyền nội bộ.';
   }
-  if (saveButton) saveButton.textContent = creating ? 'Tạo user & gửi email mời' : (user.status === 'Pending' ? 'Duyệt và cấp quyền' : 'Lưu thay đổi');
+  if (saveButton) saveButton.textContent = user.status === 'Pending' ? 'Duyệt và cấp quyền' : 'Lưu thay đổi';
   if (user.status === 'Pending') form.status.value = 'Active';
   else form.status.value = user.status || 'Invited';
   form.role.value = user.role || 'Viewer';
   setPermissionChecks(user.permissions || []);
   syncRolePermissions();
+  syncUserDepartmentVisibility();
+  hideDepartmentQuickAdd();
   $('#userDialog').showModal();
-  focusDialogField('#userDialog', user.id ? 'input[name="displayName"]' : 'input[name="username"]');
+  focusDialogField('#userDialog', 'input[name="displayName"]');
+}
+
+function departmentName(id) {
+  return state.departments.find(department => String(department.id) === String(id))?.name || 'Phòng ban';
+}
+
+function userDepartmentText(user = {}) {
+  const ids = user.departmentIds?.length ? user.departmentIds : (user.departmentId ? [user.departmentId] : []);
+  return ids.length ? ids.map(id => departmentName(id)).join(', ') : 'Chưa phân phòng ban';
+}
+
+function userDepartmentChips(user = {}) {
+  const ids = user.departmentIds?.length ? user.departmentIds : (user.departmentId ? [user.departmentId] : []);
+  return ids.length
+    ? ids.map(id => `<span class="department-chip">${escapeHtml(departmentName(id))}</span>`).join('')
+    : '<span class="department-chip muted">Chưa phân phòng ban</span>';
+}
+
+function fillDepartmentOptions(selectedIds = selectedUserDepartmentIds()) {
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  const selected = new Set((Array.isArray(selectedIds) ? selectedIds : [selectedIds]).map(id => String(id || '')).filter(Boolean));
+  select.innerHTML = state.departments
+    .map(department => `<option value="${escapeAttr(department.id)}">${escapeHtml(department.name)}</option>`)
+    .join('');
+  [...select.options].forEach(option => {
+    option.selected = selected.has(String(option.value));
+  });
+  renderDepartmentDropdown();
+  renderSelectedDepartmentLabels();
+}
+
+function selectedUserDepartmentIds() {
+  const select = $('#userDepartmentSelect');
+  if (!select) return [];
+  return [...select.selectedOptions].map(option => option.value).filter(Boolean);
+}
+
+function setSelectedDepartmentIds(ids) {
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  const selected = new Set((ids || []).map(id => String(id || '')).filter(Boolean));
+  [...select.options].forEach(option => {
+    option.selected = selected.has(String(option.value));
+  });
+}
+
+function renderDepartmentDropdown() {
+  const menu = $('#userDepartmentDropdown');
+  if (!menu) return;
+  const selected = new Set(selectedUserDepartmentIds().map(id => String(id)));
+  menu.innerHTML = state.departments.length
+    ? state.departments.map(department => {
+      const id = String(department.id);
+      const checked = selected.has(id);
+      return `
+        <button type="button" class="department-dropdown-option${checked ? ' is-selected' : ''}" data-toggle-user-department="${escapeAttr(id)}" role="menuitemcheckbox" aria-checked="${checked ? 'true' : 'false'}">
+          <span class="department-option-check" aria-hidden="true"></span>
+          <span>${escapeHtml(department.name)}</span>
+        </button>
+      `;
+    }).join('')
+    : '<div class="department-dropdown-empty">Chưa có phòng ban</div>';
+  syncDepartmentDropdownButton();
+}
+
+function toggleDepartmentDropdown(event) {
+  event?.stopPropagation();
+  const menu = $('#userDepartmentDropdown');
+  const button = $('#userDepartmentDropdownBtn');
+  if (!menu || !button) return;
+  renderDepartmentDropdown();
+  const willOpen = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !willOpen);
+  button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
+function closeDepartmentDropdown() {
+  $('#userDepartmentDropdown')?.classList.add('hidden');
+  $('#userDepartmentDropdownBtn')?.setAttribute('aria-expanded', 'false');
+}
+
+function toggleDepartmentOption(event) {
+  event.stopPropagation();
+  const optionButton = event.target?.closest?.('[data-toggle-user-department]');
+  if (!optionButton) return;
+  const id = optionButton.dataset.toggleUserDepartment;
+  const selected = new Set(selectedUserDepartmentIds().map(item => String(item)));
+  if (selected.has(String(id))) selected.delete(String(id));
+  else selected.add(String(id));
+  setSelectedDepartmentIds([...selected]);
+  renderDepartmentDropdown();
+  renderSelectedDepartmentLabels();
+}
+
+function syncDepartmentDropdownButton() {
+  const button = $('#userDepartmentDropdownBtn');
+  if (!button) return;
+  const ids = selectedUserDepartmentIds();
+  if (!ids.length) {
+    button.textContent = 'Chọn phòng ban';
+    return;
+  }
+  button.textContent = ids.length === 1 ? departmentName(ids[0]) : `${ids.length} phòng ban đã chọn`;
+}
+
+function renderSelectedDepartmentLabels() {
+  const labels = $('#selectedDepartmentLabels');
+  if (!labels) return;
+  const ids = selectedUserDepartmentIds();
+  labels.innerHTML = ids.length
+    ? ids.map(id => `
+      <span class="selected-department-label">
+        ${escapeHtml(departmentName(id))}
+        <button type="button" data-remove-user-department="${escapeAttr(id)}" title="Bỏ phòng ban">×</button>
+      </span>
+    `).join('')
+    : '<span class="selected-department-empty">Chưa phân phòng ban</span>';
+  syncDepartmentDropdownButton();
+}
+
+function removeSelectedDepartmentLabel(event) {
+  const id = event.target?.dataset?.removeUserDepartment;
+  if (!id) return;
+  const select = $('#userDepartmentSelect');
+  if (!select) return;
+  [...select.options].forEach(option => {
+    if (String(option.value) === String(id)) option.selected = false;
+  });
+  renderDepartmentDropdown();
+  renderSelectedDepartmentLabels();
+}
+
+function syncUserDepartmentVisibility() {
+  const form = $('#userForm');
+  const departmentField = $('#userDepartmentDropdownBtn')?.closest('.department-field');
+  const departmentLabels = $('#selectedDepartmentLabels');
+  const isAdminRole = form?.role?.value === 'Admin';
+  departmentField?.classList.toggle('hidden', Boolean(isAdminRole));
+  departmentLabels?.classList.toggle('hidden', Boolean(isAdminRole));
+  $('#toggleDepartmentQuickAddBtn')?.toggleAttribute('disabled', Boolean(isAdminRole));
+  if (isAdminRole) {
+    fillDepartmentOptions([]);
+    closeDepartmentDropdown();
+    hideDepartmentQuickAdd();
+  }
+}
+
+function toggleDepartmentQuickAdd() {
+  const box = $('#departmentQuickAdd');
+  if (!box) return;
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) $('#departmentQuickAddName')?.focus();
+}
+
+function hideDepartmentQuickAdd() {
+  $('#departmentQuickAdd')?.classList.add('hidden');
+  const input = $('#departmentQuickAddName');
+  if (input) input.value = '';
+}
+
+async function saveDepartmentQuickAdd() {
+  const input = $('#departmentQuickAddName');
+  const name = input?.value.trim();
+  if (!name) return;
+  const selectedIds = selectedUserDepartmentIds();
+  const department = await api('/api/departments', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+  state.departments = [...state.departments.filter(item => String(item.id) !== String(department.id)), department]
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.name).localeCompare(String(b.name)));
+  fillDepartmentOptions([...selectedIds, department.id]);
+  hideDepartmentQuickAdd();
+  toast('Đã thêm phòng ban');
 }
 
 function setPermissionChecks(permissions) {
@@ -1916,7 +2371,7 @@ function openMemberPermissionDialog(userId) {
     permission
   ]));
   const columns = permissionColumns();
-  const permissionRows = state.projectSystems.map(system => ({ id: system.id, name: system.name, type: system.type, systemId: system.id }));
+  const permissionRows = state.projectSystems.map(system => ({ id: system.id, name: system.name, systemId: system.id }));
   if (!permissionRows.length) {
     matrix.innerHTML = '<p class="form-hint">Tạo hệ thống trước, sau đó cấp quyền cho thành viên theo từng hệ thống.</p>';
     $('#memberPermissionDialog').showModal();
@@ -1989,17 +2444,19 @@ async function saveUser(event) {
   const form = event.target;
   const formData = new FormData(form);
   const id = formData.get('id');
+  if (!id) {
+    toast('User chỉ được tạo từ đăng nhập Google');
+    return;
+  }
   const payload = {
-    username: form.username.value.trim(),
     displayName: form.displayName.value.trim(),
-    password: form.password.value,
+    departmentIds: form.role.value === 'Admin' ? [] : selectedUserDepartmentIds(),
     role: form.role.value,
     status: form.status.value,
     permissions: formData.getAll('permissions')
   };
-  if (!payload.password) delete payload.password;
-  const result = await api(id ? `/api/users/${id}` : '/api/users', {
-    method: id ? 'PATCH' : 'POST',
+  const result = await api(`/api/users/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload)
   });
   $('#userDialog').close();
@@ -2007,15 +2464,6 @@ async function saveUser(event) {
   else if (result.approvalEmailRequired) toast('Đã duyệt. Email thông báo chưa được cấu hình');
   else toast('Đã lưu người dùng');
   await showUsersPanel();
-}
-
-async function resendUserInvite(id) {
-  try {
-    const result = await api(`/api/users/${id}/invite`, { method: 'POST' });
-    toast(result.inviteSent ? 'Đã gửi email mời tải app' : 'Email mời chưa được cấu hình');
-  } catch (error) {
-    toast(error.message);
-  }
 }
 
 async function deleteUser(id) {

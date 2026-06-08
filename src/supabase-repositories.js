@@ -15,6 +15,7 @@ export function createSupabaseRepositories({ supabase, encryptionKey }) {
 
   const repos = {
     users: usersRepo(supabase),
+    departments: departmentsRepo(supabase),
     entryTypes: entryTypesRepo(supabase),
     projects: projectsRepo(supabase),
     projectSystems: projectSystemsRepo(supabase),
@@ -43,7 +44,7 @@ function usersRepo(client) {
       const user = await findUserByUsername(client, username);
       if (!user) return null;
       if (normalizeUserStatus(user.status) !== 'Active') throw new Error('User is inactive');
-      return mapUser(user);
+      return await hydrateUserDepartments(client, mapUser(user));
     },
     async activateForGoogleLogin(username, verified = {}) {
       const user = await findUserByUsername(client, username);
@@ -66,15 +67,15 @@ function usersRepo(client) {
           .select()
           .single();
         if (error) throw error;
-        return mapUser(data);
+        return await hydrateUserDepartments(client, mapUser(data));
       }
-      return mapUser(user);
+      return await hydrateUserDepartments(client, mapUser(user));
     },
     async requestGoogleAccess(input) {
       const username = normalizeEmail(input.username);
       if (!username) throw new Error('Username is required');
       const existing = await findUserByUsername(client, username);
-      if (existing) return mapUser(existing);
+      if (existing) return await hydrateUserDepartments(client, mapUser(existing));
       const bootstrapAdmin = await hasNoAppUsers(client);
       const role = bootstrapAdmin ? 'Admin' : 'Viewer';
       const { data, error } = await client
@@ -86,33 +87,36 @@ function usersRepo(client) {
           role,
           status: bootstrapAdmin ? 'Active' : 'Pending',
           permissions: normalizePermissions([], role),
+          department_id: null,
           preferences: {},
           accepted_at: bootstrapAdmin ? new Date().toISOString() : null
         })
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async list() {
       const { data, error } = await client.from('app_users').select('*').order('username', { ascending: true });
       if (error) throw error;
-      return data.map(mapUser);
+      return await hydrateUsersDepartments(client, data.map(mapUser));
     },
     async get(id) {
       const { data, error } = await client.from('app_users').select('*').eq('id', id).single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async create(input) {
       const username = normalizeEmail(input.username);
       if (!username) throw new Error('Username is required');
       const role = normalizeRole(input.role);
+      const departmentIds = normalizeUserDepartmentIds(input, role);
       const { data, error } = await client
         .from('app_users')
         .insert({
           username,
           display_name: input.displayName?.trim() || username,
+          department_id: departmentIds[0] || null,
           role,
           status: normalizeUserStatus(input.status || 'Active'),
           permissions: normalizePermissions(input.permissions, role),
@@ -124,7 +128,8 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      await syncUserDepartments(client, data.id, departmentIds);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async markInvited(id, { sentAt = new Date(), expiresAt = addHours(sentAt, 24) } = {}) {
       const { data, error } = await client
@@ -140,16 +145,23 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async update(id, input) {
       const current = await this.get(id);
       if (!current) throw new Error('User not found');
       const role = normalizeRole(input.role || current.role);
+      const departmentIds = normalizeUserDepartmentIds(
+        input.departmentIds === undefined && input.departmentId === undefined
+          ? { departmentIds: current.departmentIds, departmentId: current.departmentId }
+          : input,
+        role
+      );
       const { data, error } = await client
         .from('app_users')
         .update({
           display_name: input.displayName?.trim() || current.displayName || current.username,
+          department_id: departmentIds[0] || null,
           role,
           status: normalizeUserStatus(input.status || current.status || 'Active'),
           permissions: input.permissions === undefined
@@ -161,7 +173,8 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      await syncUserDepartments(client, id, departmentIds);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async updatePreferences(id, preferences = {}) {
       const current = await this.get(id);
@@ -180,12 +193,37 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async delete(id, currentUserId) {
       if (String(id) === String(currentUserId)) throw new Error('Cannot delete current user');
       const { error } = await client.from('app_users').delete().eq('id', id);
       if (error) throw error;
+    }
+  };
+}
+
+function departmentsRepo(client) {
+  return {
+    async list() {
+      const { data, error } = await client.from('departments').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data.map(mapDepartment);
+    },
+    async create(input) {
+      const name = String(input.name || '').trim();
+      if (!name) throw new Error('Department name is required');
+      const { data, error } = await client
+        .from('departments')
+        .insert({
+          name,
+          description: input.description || '',
+          sort_order: input.sortOrder || await nextDepartmentSortOrder(client)
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return mapDepartment(data);
     }
   };
 }
@@ -433,7 +471,8 @@ function entriesRepo(client, encryptionKey) {
         .is('deleted_at', null)
         .order('name', { ascending: true });
       if (error) throw error;
-      return data.map(row => mapEntry(row, encryptionKey));
+      const entries = data.map(row => mapEntry(row, encryptionKey));
+      return attachEntryCredentials(entries, await credentialsForEntries(client, entries.map(entry => entry.id)));
     },
     async listByProjectForUser(projectId) {
       return await this.listByProject(projectId);
@@ -446,19 +485,20 @@ function entriesRepo(client, encryptionKey) {
         .order('name', { ascending: true });
       if (error) throw error;
       const term = String(query || '').toLowerCase();
-      return data
+      const entries = data
         .filter(row => !term
           || String(row.name || '').toLowerCase().includes(term)
           || String(row.url || '').toLowerCase().includes(term)
           || String(row.username || '').toLowerCase().includes(term))
         .map(row => mapEntry(row, encryptionKey));
+      return attachEntryCredentials(entries, await credentialsForEntries(client, entries.map(entry => entry.id)));
     },
     async searchForUser(query) {
       return await this.search(query);
     },
     async get(id) {
       const row = await getEntryRow(client, id);
-      return mapEntry(row, encryptionKey);
+      return attachEntryCredentials([mapEntry(row, encryptionKey)], await credentialsForEntries(client, [id]))[0];
     },
     async getRaw(id) {
       return await getEntryRow(client, id);
@@ -485,7 +525,8 @@ function entriesRepo(client, encryptionKey) {
         .select()
         .single();
       if (error) throw error;
-      return mapEntry(data, encryptionKey);
+      if (Array.isArray(input.credentials)) await syncEntryCredentials(client, data.id, input.credentials, encryptionKey);
+      return attachEntryCredentials([mapEntry(data, encryptionKey)], await credentialsForEntries(client, [data.id]))[0];
     },
     async update(id, input) {
       const patch = {
@@ -505,7 +546,8 @@ function entriesRepo(client, encryptionKey) {
       if (input.password !== undefined) patch.password_cipher = encryptPayload(input.password || '', encryptionKey);
       const { data, error } = await client.from('entries').update(patch).eq('id', id).select().single();
       if (error) throw error;
-      return mapEntry(data, encryptionKey);
+      if (Array.isArray(input.credentials)) await syncEntryCredentials(client, id, input.credentials, encryptionKey);
+      return attachEntryCredentials([mapEntry(data, encryptionKey)], await credentialsForEntries(client, [id]))[0];
     },
     async delete(id) {
       const { error } = await client
@@ -520,6 +562,13 @@ function entriesRepo(client, encryptionKey) {
     },
     async revealPasswordForUser(id) {
       return await this.revealPassword(id);
+    },
+    async getCredential(entryId, credentialId) {
+      return mapCredential(await getCredentialRow(client, entryId, credentialId));
+    },
+    async revealCredentialPassword(entryId, credentialId) {
+      const credential = await getCredentialRow(client, entryId, credentialId);
+      return decryptPayload(credential?.password_cipher, encryptionKey);
     },
     async exportForUser(_user, { includePasswords = false } = {}) {
       const { data, error } = await client.from('entries').select('*').is('deleted_at', null).order('name', { ascending: true });
@@ -662,8 +711,9 @@ function settingsRepo(client) {
 function exportRepo(repos) {
   return {
     async backupJson({ includePasswords = false } = {}) {
-      const [users, projects, entries, settings] = await Promise.all([
+      const [users, departments, projects, entries, settings] = await Promise.all([
         repos.users.list(),
+        repos.departments.list(),
         repos.projects.list(),
         repos.entries.exportForUser({ role: 'Admin' }, { includePasswords }),
         repos.settings.getAll()
@@ -672,11 +722,13 @@ function exportRepo(repos) {
         exportedAt: new Date().toISOString(),
         counts: {
           users: users.length,
+          departments: departments.length,
           projects: projects.length,
           entries: entries.length,
           settings: Object.keys(settings).length
         },
         users,
+        departments,
         projects,
         entries,
         settings
@@ -712,12 +764,158 @@ async function getEntryRow(client, id) {
   return data;
 }
 
+async function getCredentialRow(client, entryId, credentialId) {
+  const { data, error } = await client
+    .from('entry_credentials')
+    .select('*')
+    .eq('entry_id', entryId)
+    .eq('id', credentialId)
+    .is('deleted_at', null)
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error('Credential not found');
+  return data;
+}
+
+async function credentialsForEntries(client, entryIds) {
+  if (!entryIds.length) return [];
+  const { data, error } = await client
+    .from('entry_credentials')
+    .select('*')
+    .in('entry_id', entryIds)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data.map(mapCredential);
+}
+
+function attachEntryCredentials(entries, credentials) {
+  const byEntryId = new Map();
+  for (const credential of credentials) {
+    const key = String(credential.entryId);
+    byEntryId.set(key, [...(byEntryId.get(key) || []), credential]);
+  }
+  return entries.map(entry => {
+    const entryCredentials = byEntryId.get(String(entry.id)) || [];
+    return {
+      ...entry,
+      credentials: entryCredentials,
+      username: entryCredentials[0]?.username || entry.username || ''
+    };
+  });
+}
+
+async function syncEntryCredentials(client, entryId, credentials, encryptionKey) {
+  const { data: existingRows, error: existingError } = await client
+    .from('entry_credentials')
+    .select('*')
+    .eq('entry_id', entryId)
+    .is('deleted_at', null);
+  if (existingError) throw existingError;
+
+  const existingIds = new Set((existingRows || []).map(row => String(row.id)));
+  const incomingIds = new Set(credentials.filter(item => item.id).map(item => String(item.id)));
+
+  for (const id of existingIds) {
+    if (incomingIds.has(id)) continue;
+    const { error } = await client
+      .from('entry_credentials')
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  for (const [index, credential] of credentials.entries()) {
+    const payload = {
+      entry_id: entryId,
+      department_id: credential.departmentId || null,
+      username: credential.username || '',
+      sort_order: index + 1,
+      updated_at: new Date().toISOString()
+    };
+    if (credential.password !== undefined) payload.password_cipher = encryptPayload(credential.password || '', encryptionKey);
+
+    if (credential.id && existingIds.has(String(credential.id))) {
+      const { error } = await client.from('entry_credentials').update(payload).eq('id', credential.id);
+      if (error) throw error;
+    } else {
+      const { error } = await client.from('entry_credentials').insert({
+        ...payload,
+        password_cipher: payload.password_cipher || encryptPayload('', encryptionKey)
+      });
+      if (error) throw error;
+    }
+  }
+}
+
 async function getProjectRow(client, id) {
   if (!id) return null;
   const { data, error } = await client.from('projects').select('*').eq('id', id).single();
   if (isMissingSingleRowError(error)) return null;
   if (error) throw error;
   return data || null;
+}
+
+async function hydrateUserDepartments(client, user) {
+  if (!user) return user;
+  return (await hydrateUsersDepartments(client, [user]))[0] || user;
+}
+
+async function hydrateUsersDepartments(client, users) {
+  if (!users.length) return users;
+  const userIds = users.map(user => user.id).filter(Boolean);
+  if (!userIds.length) return users;
+  const { data, error } = await client
+    .from('user_departments')
+    .select('*')
+    .in('user_id', userIds);
+  if (isMissingTableError(error)) {
+    return users.map(user => ({
+      ...user,
+      departmentIds: user.departmentId ? [user.departmentId] : []
+    }));
+  }
+  if (error) throw error;
+  const byUserId = new Map();
+  for (const row of data || []) {
+    const key = String(row.user_id);
+    byUserId.set(key, [...(byUserId.get(key) || []), row.department_id]);
+  }
+  return users.map(user => {
+    const departmentIds = byUserId.get(String(user.id)) || (user.departmentId ? [user.departmentId] : []);
+    return {
+      ...user,
+      departmentId: user.role === 'Admin' ? null : (departmentIds[0] || user.departmentId || null),
+      departmentIds: user.role === 'Admin' ? [] : departmentIds
+    };
+  });
+}
+
+async function syncUserDepartments(client, userId, departmentIds) {
+  const { data: existingRows, error: existingError } = await client
+    .from('user_departments')
+    .select('*')
+    .eq('user_id', userId);
+  if (isMissingTableError(existingError)) return;
+  if (existingError) throw existingError;
+  const existingIds = new Set((existingRows || []).map(row => String(row.department_id)));
+  const nextIds = new Set(departmentIds.map(id => String(id)));
+  for (const departmentId of existingIds) {
+    if (nextIds.has(departmentId)) continue;
+    const { error } = await client
+      .from('user_departments')
+      .delete()
+      .eq('user_id', userId)
+      .eq('department_id', departmentId);
+    if (error) throw error;
+  }
+  for (const departmentId of nextIds) {
+    if (existingIds.has(departmentId)) continue;
+    const { error } = await client
+      .from('user_departments')
+      .insert({ user_id: userId, department_id: departmentId });
+    if (error) throw error;
+  }
 }
 
 async function resolveVaultId(client, ownerAuthUserId) {
@@ -769,6 +967,12 @@ async function nextProjectSystemSortOrder(client, projectId) {
   return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
 }
 
+async function nextDepartmentSortOrder(client) {
+  const { data, error } = await client.from('departments').select('sort_order');
+  if (error) throw error;
+  return Math.max(0, ...data.map(row => Number(row.sort_order) || 0)) + 1;
+}
+
 function mapUser(row) {
   if (!row) return null;
   const role = normalizeRole(row.role);
@@ -777,6 +981,8 @@ function mapUser(row) {
     authUserId: row.auth_user_id || null,
     username: row.username,
     displayName: row.display_name || row.username,
+    departmentId: role === 'Admin' ? null : (row.department_id || null),
+    departmentIds: role === 'Admin' || !row.department_id ? [] : [row.department_id],
     role,
     status: normalizeUserStatus(row.status),
     permissions: normalizePermissions(row.permissions, role),
@@ -785,6 +991,18 @@ function mapUser(row) {
     inviteExpiresAt: row.invite_expires_at || null,
     acceptedAt: row.accepted_at || null,
     createdAt: row.created_at
+  };
+}
+
+function mapDepartment(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    sortOrder: row.sort_order || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -880,10 +1098,24 @@ function mapEntry(row, encryptionKey) {
     url: row.url || '',
     username: row.username || '',
     passwordMasked: true,
-    notes: decryptPayload(row.secret_notes_cipher, encryptionKey),
+    notes: decryptPayloadOrEmpty(row.secret_notes_cipher, encryptionKey),
     status: row.status || 'Active',
     tags: row.tags || [],
     permissions: fullEntryPermissions(),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapCredential(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    entryId: row.entry_id,
+    departmentId: row.department_id || null,
+    username: row.username || '',
+    passwordMasked: true,
+    sortOrder: row.sort_order || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -967,6 +1199,19 @@ function decryptPayload(value, encryptionKey) {
   return decryptText(JSON.stringify(value), encryptionKey);
 }
 
+function decryptPayloadOrEmpty(value, encryptionKey) {
+  try {
+    return decryptPayload(value, encryptionKey);
+  } catch (error) {
+    if (isDecryptAuthError(error)) return '';
+    throw error;
+  }
+}
+
+function isDecryptAuthError(error) {
+  return /Unsupported state or unable to authenticate data/i.test(error?.message || '');
+}
+
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -986,10 +1231,27 @@ function normalizePermissions(input, role) {
   return uniqueStrings(Array.isArray(input) ? input : []).filter(permission => allowed.has(permission));
 }
 
+function normalizeUserDepartmentIds(input = {}, role = 'Viewer') {
+  if (normalizeRole(role) === 'Admin') return [];
+  const ids = Array.isArray(input.departmentIds)
+    ? input.departmentIds
+    : input.departmentId
+      ? [input.departmentId]
+      : [];
+  return uniqueStrings(ids);
+}
+
 function isMissingSingleRowError(error) {
   if (!error) return false;
   return error.code === 'PGRST116'
     || /Cannot coerce the result to a single JSON object/i.test(error.message || '');
+}
+
+function isMissingTableError(error) {
+  if (!error) return false;
+  return error.code === '42P01'
+    || error.code === 'PGRST205'
+    || /relation .* does not exist|Could not find the table/i.test(error.message || '');
 }
 
 function uniqueStrings(values) {

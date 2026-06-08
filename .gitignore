@@ -5,3 +5,4 @@ data/
 .superpowers/
 .codex/
 npm-debug.log*
+dev-server*.log

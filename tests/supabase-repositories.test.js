@@ -132,6 +132,83 @@ test('updates Supabase user theme preferences', async () => {
   assert.deepEqual(rows.app_users[0].preferences, user.preferences);
 });
 
+test('creates departments and assigns them to Supabase users', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'user-dept',
+    username: 'dept@example.com',
+    display_name: 'Dept User',
+    role: 'Viewer',
+    status: 'Pending',
+    permissions: [],
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 12)
+  });
+
+  const department = await repos.departments.create({ name: 'Marketing' });
+  const user = await repos.users.update('user-dept', {
+    displayName: 'Dept User',
+    role: 'Viewer',
+    status: 'Active',
+    departmentId: department.id,
+    permissions: []
+  });
+  const departments = await repos.departments.list();
+
+  assert.deepEqual(departments.map(item => item.name), ['Marketing']);
+  assert.equal(user.departmentId, department.id);
+  assert.deepEqual(user.departmentIds, [department.id]);
+  assert.equal(rows.app_users[0].department_id, department.id);
+});
+
+test('assigns multiple departments to non-admin users and clears them for admins', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'user-multi-dept',
+    username: 'multi@example.com',
+    display_name: 'Multi Dept',
+    role: 'Viewer',
+    status: 'Active',
+    permissions: [],
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  rows.departments.push(
+    { id: 'department-sales', name: 'Sales', sort_order: 1 },
+    { id: 'department-support', name: 'Support', sort_order: 2 }
+  );
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 12)
+  });
+
+  const viewer = await repos.users.update('user-multi-dept', {
+    displayName: 'Multi Dept',
+    role: 'Viewer',
+    status: 'Active',
+    departmentIds: ['department-sales', 'department-support'],
+    permissions: []
+  });
+
+  assert.equal(viewer.departmentId, 'department-sales');
+  assert.deepEqual(viewer.departmentIds, ['department-sales', 'department-support']);
+  assert.deepEqual(rows.user_departments.map(row => row.department_id), ['department-sales', 'department-support']);
+
+  const admin = await repos.users.update('user-multi-dept', {
+    displayName: 'Multi Dept',
+    role: 'Admin',
+    status: 'Active',
+    departmentIds: ['department-sales'],
+    permissions: ['users.manage']
+  });
+
+  assert.equal(admin.departmentId, null);
+  assert.deepEqual(admin.departmentIds, []);
+  assert.deepEqual(rows.user_departments, []);
+});
+
 test('lists entry types from Supabase', async () => {
   const rows = createRows();
   rows.entry_types.push({
@@ -201,8 +278,10 @@ test('exports backup JSON from Supabase rows without file paths', async () => {
   const backup = await repos.export.backupJson({ includePasswords: false });
 
   assert.equal(backup.counts.users, 1);
+  assert.equal(backup.counts.departments, 0);
   assert.equal(backup.counts.projects, 1);
   assert.equal(backup.counts.entries, 1);
+  assert.deepEqual(backup.departments, []);
   assert.equal('latestPath' in backup, false);
   assert.equal(backup.entries[0].password, undefined);
   assert.equal(backup.settings.autoLockMinutes, 10);
@@ -230,6 +309,33 @@ test('reveals encrypted Supabase entry password', async () => {
   const password = await repos.entries.revealPassword('entry-1');
 
   assert.equal(password, 'supabase-secret');
+});
+
+test('lists Supabase entries when a note cipher was encrypted with another app secret', async () => {
+  const activeKey = Buffer.alloc(32, 10);
+  const oldKey = Buffer.alloc(32, 11);
+  const rows = createRows();
+  rows.entries.push({
+    id: 'entry-old-note',
+    project_id: 'project-1',
+    name: 'Apec Global Account',
+    type: 'Web',
+    password_cipher: null,
+    secret_notes_cipher: JSON.parse(encryptText('old private note', oldKey)),
+    tags: [],
+    status: 'Active',
+    deleted_at: null
+  });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: activeKey
+  });
+
+  const entries = await repos.entries.listByProject('project-1');
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].name, 'Apec Global Account');
+  assert.equal(entries[0].notes, '');
 });
 
 test('project create resolves a personal vault for the signed-in owner', async () => {
@@ -284,13 +390,45 @@ test('entry create inherits vault id from its project', async () => {
   assert.equal(rows.entries[0].vault_id, 'vault-owner');
 });
 
+test('entry credentials are stored as department-scoped encrypted rows', async () => {
+  const rows = createRows();
+  rows.vaults.push({ id: 'vault-owner', owner_id: 'auth-owner' });
+  rows.projects.push({ id: 'project-owner', vault_id: 'vault-owner', name: 'Owner Project' });
+  rows.departments.push({ id: 'department-sales', name: 'Sales' });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 9)
+  });
+
+  const entry = await repos.entries.create({
+    projectId: 'project-owner',
+    type: 'Admin',
+    name: 'Owner Account',
+    credentials: [{
+      departmentId: 'department-sales',
+      username: 'sales-user',
+      password: 'sales-pass'
+    }]
+  });
+
+  assert.equal(entry.credentials.length, 1);
+  assert.equal(entry.credentials[0].departmentId, 'department-sales');
+  assert.equal(entry.credentials[0].username, 'sales-user');
+  assert.equal(rows.entry_credentials[0].username, 'sales-user');
+  assert.notEqual(rows.entry_credentials[0].password_cipher, 'sales-pass');
+  assert.equal(await repos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'sales-pass');
+});
+
 function createRows() {
   return {
     app_users: [],
     vaults: [],
     projects: [],
+    departments: [],
+    user_departments: [],
     entry_types: [],
     entries: [],
+    entry_credentials: [],
     project_memberships: [],
     detailed_permissions: [],
     activity_logs: [],
@@ -389,6 +527,7 @@ class FakeQuery {
         id: value.id || `${this.table}-${tableRows.length + 1}`,
         created_at: value.created_at || '2026-05-27T00:00:00.000Z',
         updated_at: value.updated_at || '2026-05-27T00:00:00.000Z',
+        deleted_at: value.deleted_at ?? null,
         ...value
       }));
       tableRows.push(...prepared);
