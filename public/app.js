@@ -518,11 +518,21 @@ async function loginWithGoogle() {
 }
 
 function resolveGoogleRedirectUrl() {
+  const currentOrigin = String(window.location.origin || '').trim().replace(/\/$/, '');
+  if ((currentOrigin.startsWith('https://') && !isLocalHttpOrigin(currentOrigin)) || currentOrigin.startsWith('capacitor://')) return currentOrigin;
   const configured = String(runtimeConfig.appUrl || '').trim().replace(/\/$/, '');
   if (configured) return configured;
-  const origin = String(window.location.origin || '').trim().replace(/\/$/, '');
-  if (/^https?:\/\//i.test(origin)) return origin;
+  if (/^https?:\/\//i.test(currentOrigin)) return currentOrigin;
   return 'http://127.0.0.1:3000';
+}
+
+function isLocalHttpOrigin(origin) {
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return ['localhost', '127.0.0.1', '0.0.0.0'].includes(hostname);
+  } catch {
+    return false;
+  }
 }
 
 async function completeGoogleLogin() {
@@ -677,7 +687,7 @@ function renderProjects() {
 
 function renderSystemSubmenu(project) {
   const projectId = String(project?.id || '');
-  const expanded = projectId && (state.expandedProjectIds.has(projectId) || String(state.selectedProjectId) === projectId);
+  const expanded = projectId && state.expandedProjectIds.has(projectId);
   if (!expanded) return '';
   const systems = String(state.selectedProjectId) === projectId
     ? state.projectSystems
