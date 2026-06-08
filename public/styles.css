@@ -729,6 +729,8 @@ label { display: grid; gap: 5px; min-width: 0; color: var(--text3); font-size: 1
   color: var(--accent-light);
   border-style: dashed;
   border-color: rgba(124, 58, 237, .24);
+  font-size: 12px;
+  font-weight: 500;
 }
 .system-empty {
   padding: 6px 9px;

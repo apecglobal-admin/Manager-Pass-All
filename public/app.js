@@ -834,9 +834,12 @@ function renderHeader() {
   const canShowNewEntry = Boolean(project && !missingSystems && canCreateEntry());
   $('#newEntryBtn')?.classList.toggle('hidden', !canShowNewEntry);
   const newEntryButton = $('#newEntryBtn');
-  if (newEntryButton) newEntryButton.title = missingSystems
-    ? 'Tạo hệ thống trước khi thêm account'
-    : '';
+  if (newEntryButton) {
+    newEntryButton.disabled = !canShowNewEntry;
+    newEntryButton.title = missingSystems
+      ? 'Tạo hệ thống trước khi thêm account'
+      : '';
+  }
   const title = $('#currentProjectName');
   const meta = $('#currentProjectMeta');
   if (title) title.textContent = project?.name || 'Tất cả dự án';

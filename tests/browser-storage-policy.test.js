@@ -283,10 +283,12 @@ test('global user permission UI only exposes permission management', () => {
 
 test('entry actions use project-scoped permissions instead of global account permissions', () => {
   const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
   const renderHeader = app.match(/function renderHeader\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
   const deleteEntry = app.match(/async function deleteEntry\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
   const applyPermissionUi = app.match(/function applyPermissionUi\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const newEntryButton = html.match(/<button id="newEntryBtn"[\s\S]+?<\/button>/)?.[0] || '';
 
   assert.doesNotMatch(app, /can\('entries\.write'\)\s*\|\|\s*entry\.permissions\?\.canEdit/);
   assert.doesNotMatch(app, /can\('entries\.delete'\)\s*\|\|\s*entry\.permissions\?\.canDelete/);
@@ -294,7 +296,8 @@ test('entry actions use project-scoped permissions instead of global account per
   assert.doesNotMatch(renderHeader, /can\('entries\.write'\)/);
   assert.doesNotMatch(openEntryDialog, /can\('entries\.write'\)/);
   assert.doesNotMatch(deleteEntry, /can\('entries\.delete'\)/);
-  assert.doesNotMatch(renderHeader, /newEntryBtn'\)\.disabled/);
+  assert.doesNotMatch(newEntryButton, /disabled/);
+  assert.match(renderHeader, /newEntryButton\.disabled = !canShowNewEntry/);
   assert.match(renderHeader, /newEntryBtn'\)\?\.classList\.toggle\('hidden'/);
   assert.doesNotMatch(applyPermissionUi, /npb\.disabled = !isAdmin\(\)/);
   assert.match(applyPermissionUi, /npb\?\.classList\.toggle\('hidden', !isAdmin\(\)\)/);
@@ -553,6 +556,8 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.match(css, /\.project-chip \.account-more-btn,[\s\S]+border-color:\s*transparent/);
   assert.match(css, /\.system-submenu \.system-chip[\s\S]+font-size:\s*12px/);
   assert.match(css, /\.system-chip-main > span[\s\S]+font-weight:\s*500/);
+  assert.match(css, /\.add-system-inline[\s\S]+font-size:\s*12px/);
+  assert.match(css, /\.add-system-inline[\s\S]+font-weight:\s*500/);
   assert.doesNotMatch(css, /\.system-account-card:hover \.account-action-menu/);
   assert.doesNotMatch(app, /function renderSystemDetail/);
   assert.doesNotMatch(app, /function renderSystemSections/);
