@@ -43,6 +43,28 @@ test('server Supabase clients provide a WebSocket transport for packaged Electro
   }
 });
 
+test('runtime config derives appUrl from the deployed request origin', async () => {
+  const app = createApp({ repos: createMemoryRepos() });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const response = await fetch(`${base}/runtime-config.js`, {
+      headers: {
+        'x-forwarded-host': 'manager-pass-all.vercel.app',
+        'x-forwarded-proto': 'https'
+      }
+    });
+    const text = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(text, /"appUrl":"https:\/\/manager-pass-all\.vercel\.app"/);
+    assert.doesNotMatch(text, /localhost:3000/);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Supabase login, create project, create entry, and reveal password through API', async () => {
   const repos = createMemoryRepos();
   const app = createApp({

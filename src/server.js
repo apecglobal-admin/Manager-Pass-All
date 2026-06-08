@@ -107,7 +107,10 @@ export function createRequestHandler({
       return;
     }
     if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/runtime-config.js') {
-      const config = getPublicSupabaseConfig();
+      const config = {
+        ...getPublicSupabaseConfig(),
+        appUrl: resolveRequestAppUrl(req)
+      };
       res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' });
       res.end(`window.APECGLOBAL_CONFIG = ${JSON.stringify(config)};`);
       return;
@@ -189,6 +192,19 @@ function createFileSessionStore() {
 function sessionFilePath(sessionDir, id) {
   if (!/^[A-Za-z0-9_-]+$/.test(String(id || ''))) return null;
   return join(sessionDir, `${id}.json`);
+}
+
+function resolveRequestAppUrl(req) {
+  const forwardedProto = normalizeForwardedHeader(req.headers['x-forwarded-proto']);
+  const forwardedHost = normalizeForwardedHeader(req.headers['x-forwarded-host']) || normalizeForwardedHeader(req.headers.host);
+  if (!forwardedHost) return '';
+  const protocol = forwardedProto || (req.socket?.encrypted ? 'https' : 'http');
+  if (!protocol) return '';
+  return `${protocol}://${forwardedHost}`.replace(/\/$/, '');
+}
+
+function normalizeForwardedHeader(value) {
+  return String(value || '').split(',')[0].trim();
 }
 
 function createServerSupabaseClient(createSupabaseClient, { accessToken } = {}) {
