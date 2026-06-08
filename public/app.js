@@ -1616,9 +1616,9 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
     const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
     const revealState = revealedPasswordState(credentialKey);
     const password = revealState?.password || '************';
-    const revealCountdown = revealState
+    const revealAction = revealState
       ? `<span class="reveal-countdown" data-reveal-countdown="${escapeAttr(credentialKey)}">Ẩn sau ${revealSecondsRemaining(revealState)}s</span>`
-      : '';
+      : `<button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>`;
     return `
       <div class="credential-detail-item">
         <div class="credential-department-title">${escapeHtml(credentialDepartmentName(credential))}</div>
@@ -1635,10 +1635,9 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
           <div>
             <small>Mật khẩu</small>
             <strong class="password-text">${escapeHtml(password)}</strong>
-            ${revealCountdown}
           </div>
           ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-          <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
+          ${revealAction}
           <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
         </div>
       </div>

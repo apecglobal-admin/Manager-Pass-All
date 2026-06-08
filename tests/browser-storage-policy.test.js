@@ -333,8 +333,11 @@ test('revealed passwords show a 20 second countdown before masking again', () =>
   assert.match(revealPassword, /setRevealedPassword\(credentialId \? `\$\{id\}:\$\{credentialId\}` : id, result\.password\)/);
   assert.match(credentialDetailRows, /data-reveal-countdown/);
   assert.match(credentialDetailRows, /Ẩn sau \$\{revealSecondsRemaining\(revealState\)\}s/);
-  assert.match(credentialDetailRows, /<strong class="password-text">[\s\S]+?\$\{revealCountdown\}/);
-  assert.doesNotMatch(credentialDetailRows, /<span class="risk-badge">Nhạy cảm<\/span>\s*\$\{revealCountdown\}/);
+  assert.match(credentialDetailRows, /const revealAction = revealState/);
+  assert.match(credentialDetailRows, /\? `<span class="reveal-countdown"/);
+  assert.match(credentialDetailRows, /: `<button class="ghost-btn" data-reveal=/);
+  assert.doesNotMatch(credentialDetailRows, /<strong class="password-text">\$\{escapeHtml\(password\)\}<\/strong>\s*\$\{revealAction\}/);
+  assert.match(credentialDetailRows, /<span class="risk-badge">Nhạy cảm<\/span>\s*\$\{revealAction\}/);
 });
 
 test('accounts stay hidden while systems remain selectable', () => {
