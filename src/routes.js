@@ -347,8 +347,15 @@ export function createRouter(baseRepos, options = {}) {
 
   function visibleCredentialsForUser(credentials, user) {
     if (isAdminUser(user)) return credentials;
-    if (!user?.departmentId) return [];
-    return credentials.filter(credential => String(credential.departmentId || '') === String(user.departmentId));
+    const departmentIds = userDepartmentIds(user);
+    if (!departmentIds.size) return [];
+    return credentials.filter(credential => departmentIds.has(String(credential.departmentId || '')));
+  }
+
+  function userDepartmentIds(user) {
+    return new Set((user?.departmentIds?.length ? user.departmentIds : [user?.departmentId])
+      .filter(Boolean)
+      .map(id => String(id)));
   }
 
   function sanitizeEntryCredentials(entry) {
@@ -376,7 +383,7 @@ export function createRouter(baseRepos, options = {}) {
       sendJson(res, 404, { error: 'Credential not found' });
       return null;
     }
-    if (String(credential.departmentId || '') !== String(user.departmentId || '')) {
+    if (!userDepartmentIds(user).has(String(credential.departmentId || ''))) {
       sendJson(res, 403, { error: 'Permission denied' });
       return null;
     }

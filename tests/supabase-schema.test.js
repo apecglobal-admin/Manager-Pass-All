@@ -58,3 +58,13 @@ test('Supabase entry credentials migration stores department-scoped credentials'
   assert.match(sql, /idx_entry_credentials_department_id/i);
   assert.match(sql, /entry credentials admin access/i);
 });
+
+test('Supabase user departments migration stores multiple departments per user', () => {
+  const sql = readFileSync('sql/012_user_departments.sql', 'utf8');
+
+  assert.match(sql, /create table if not exists public\.user_departments/i);
+  assert.match(sql, /user_id uuid not null references public\.app_users\(id\)/i);
+  assert.match(sql, /department_id uuid not null references public\.departments\(id\)/i);
+  assert.match(sql, /primary key \(user_id, department_id\)/i);
+  assert.match(sql, /user departments admin access/i);
+});

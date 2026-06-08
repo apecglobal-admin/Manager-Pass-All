@@ -85,7 +85,10 @@ function bindEvents() {
   $('#entryTypeForm')?.addEventListener('submit', saveEntryType);
   $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
-  $('#userRoleSelect').addEventListener('change', syncRolePermissions);
+  $('#userRoleSelect').addEventListener('change', () => {
+    syncRolePermissions();
+    syncUserDepartmentVisibility();
+  });
   $('#toggleDepartmentQuickAddBtn')?.addEventListener('click', toggleDepartmentQuickAdd);
   $('#saveDepartmentQuickAddBtn')?.addEventListener('click', saveDepartmentQuickAdd);
   $('#projectSearch').addEventListener('input', renderProjects);
@@ -1513,14 +1516,16 @@ function defaultEntryCredentials(entry = {}) {
 
 function currentCredentialDepartmentId() {
   if (isAdmin()) return state.departments[0]?.id || '';
-  return state.currentUser?.departmentId || '';
+  return state.currentUser?.departmentIds?.[0] || state.currentUser?.departmentId || '';
 }
 
 function credentialDepartmentOptions(selectedId = '') {
   const departments = state.departments.length
     ? state.departments
-    : state.currentUser?.departmentId
-      ? [{ id: state.currentUser.departmentId, name: 'Phòng ban của tôi' }]
+    : state.currentUser?.departmentIds?.length
+      ? state.currentUser.departmentIds.map(id => ({ id, name: departmentName(id) }))
+      : state.currentUser?.departmentId
+        ? [{ id: state.currentUser.departmentId, name: 'Phòng ban của tôi' }]
       : [];
   const options = ['<option value="">Chưa phân phòng ban</option>']
     .concat(departments.map(department => `<option value="${escapeAttr(department.id)}">${escapeHtml(department.name)}</option>`));
@@ -1940,7 +1945,7 @@ function renderUsersPanel() {
           <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
         </div>
         <span class="role-chip">${escapeHtml(user.role)}</span>
-        ${user.departmentId ? `<span class="department-chip">${escapeHtml(departmentName(user.departmentId))}</span>` : ''}
+        ${userDepartmentChips(user)}
         <p>${permissionSummary(user)}</p>
         <div class="user-actions">
           <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
@@ -1974,7 +1979,7 @@ function renderUsersPanel() {
             <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
           </div>
           <span class="role-chip">${escapeHtml(user.role)}</span>
-          ${user.departmentId ? `<span class="department-chip">${escapeHtml(departmentName(user.departmentId))}</span>` : ''}
+          ${userDepartmentChips(user)}
           <p>${permissionSummary(user)}</p>
           <div class="user-actions">
             <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
@@ -2033,7 +2038,7 @@ function openUserDialog(user = {}) {
   form.username.value = user.username || '';
   form.username.disabled = Boolean(user.id);
   form.displayName.value = user.displayName || '';
-  fillDepartmentOptions(user.departmentId || '');
+  fillDepartmentOptions(user.departmentIds || (user.departmentId ? [user.departmentId] : []));
   form.password.value = '';
   form.password.required = false;
   passwordField?.classList.toggle('hidden', creating);
@@ -2049,6 +2054,7 @@ function openUserDialog(user = {}) {
   form.role.value = user.role || 'Viewer';
   setPermissionChecks(user.permissions || []);
   syncRolePermissions();
+  syncUserDepartmentVisibility();
   hideDepartmentQuickAdd();
   $('#userDialog').showModal();
   focusDialogField('#userDialog', user.id ? 'input[name="displayName"]' : 'input[name="username"]');
@@ -2058,14 +2064,40 @@ function departmentName(id) {
   return state.departments.find(department => String(department.id) === String(id))?.name || 'Phòng ban';
 }
 
-function fillDepartmentOptions(selectedId = $('#userDepartmentSelect')?.value || '') {
+function userDepartmentChips(user = {}) {
+  const ids = user.departmentIds?.length ? user.departmentIds : (user.departmentId ? [user.departmentId] : []);
+  return ids.map(id => `<span class="department-chip">${escapeHtml(departmentName(id))}</span>`).join('');
+}
+
+function fillDepartmentOptions(selectedIds = selectedUserDepartmentIds()) {
   const select = $('#userDepartmentSelect');
   if (!select) return;
+  const selected = new Set((Array.isArray(selectedIds) ? selectedIds : [selectedIds]).map(id => String(id || '')).filter(Boolean));
   select.innerHTML = [
     '<option value="">Chưa phân phòng ban</option>',
     ...state.departments.map(department => `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`)
   ].join('');
-  select.value = state.departments.some(department => String(department.id) === String(selectedId)) ? selectedId : '';
+  [...select.options].forEach(option => {
+    option.selected = selected.has(String(option.value));
+  });
+}
+
+function selectedUserDepartmentIds() {
+  const select = $('#userDepartmentSelect');
+  if (!select) return [];
+  return [...select.selectedOptions].map(option => option.value).filter(Boolean);
+}
+
+function syncUserDepartmentVisibility() {
+  const form = $('#userForm');
+  const departmentField = $('#userDepartmentSelect')?.closest('.department-field');
+  const isAdminRole = form?.role?.value === 'Admin';
+  departmentField?.classList.toggle('hidden', Boolean(isAdminRole));
+  $('#toggleDepartmentQuickAddBtn')?.toggleAttribute('disabled', Boolean(isAdminRole));
+  if (isAdminRole) {
+    fillDepartmentOptions([]);
+    hideDepartmentQuickAdd();
+  }
 }
 
 function toggleDepartmentQuickAdd() {
@@ -2205,7 +2237,7 @@ async function saveUser(event) {
     username: form.username.value.trim(),
     displayName: form.displayName.value.trim(),
     password: form.password.value,
-    departmentId: form.departmentId.value || null,
+    departmentIds: form.role.value === 'Admin' ? [] : selectedUserDepartmentIds(),
     role: form.role.value,
     status: form.status.value,
     permissions: formData.getAll('permissions')

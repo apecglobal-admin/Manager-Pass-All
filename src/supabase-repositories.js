@@ -44,7 +44,7 @@ function usersRepo(client) {
       const user = await findUserByUsername(client, username);
       if (!user) return null;
       if (normalizeUserStatus(user.status) !== 'Active') throw new Error('User is inactive');
-      return mapUser(user);
+      return await hydrateUserDepartments(client, mapUser(user));
     },
     async activateForGoogleLogin(username, verified = {}) {
       const user = await findUserByUsername(client, username);
@@ -67,15 +67,15 @@ function usersRepo(client) {
           .select()
           .single();
         if (error) throw error;
-        return mapUser(data);
+        return await hydrateUserDepartments(client, mapUser(data));
       }
-      return mapUser(user);
+      return await hydrateUserDepartments(client, mapUser(user));
     },
     async requestGoogleAccess(input) {
       const username = normalizeEmail(input.username);
       if (!username) throw new Error('Username is required');
       const existing = await findUserByUsername(client, username);
-      if (existing) return mapUser(existing);
+      if (existing) return await hydrateUserDepartments(client, mapUser(existing));
       const bootstrapAdmin = await hasNoAppUsers(client);
       const role = bootstrapAdmin ? 'Admin' : 'Viewer';
       const { data, error } = await client
@@ -94,28 +94,29 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async list() {
       const { data, error } = await client.from('app_users').select('*').order('username', { ascending: true });
       if (error) throw error;
-      return data.map(mapUser);
+      return await hydrateUsersDepartments(client, data.map(mapUser));
     },
     async get(id) {
       const { data, error } = await client.from('app_users').select('*').eq('id', id).single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async create(input) {
       const username = normalizeEmail(input.username);
       if (!username) throw new Error('Username is required');
       const role = normalizeRole(input.role);
+      const departmentIds = normalizeUserDepartmentIds(input, role);
       const { data, error } = await client
         .from('app_users')
         .insert({
           username,
           display_name: input.displayName?.trim() || username,
-          department_id: input.departmentId || null,
+          department_id: departmentIds[0] || null,
           role,
           status: normalizeUserStatus(input.status || 'Active'),
           permissions: normalizePermissions(input.permissions, role),
@@ -127,7 +128,8 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      await syncUserDepartments(client, data.id, departmentIds);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async markInvited(id, { sentAt = new Date(), expiresAt = addHours(sentAt, 24) } = {}) {
       const { data, error } = await client
@@ -143,17 +145,23 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async update(id, input) {
       const current = await this.get(id);
       if (!current) throw new Error('User not found');
       const role = normalizeRole(input.role || current.role);
+      const departmentIds = normalizeUserDepartmentIds(
+        input.departmentIds === undefined && input.departmentId === undefined
+          ? { departmentIds: current.departmentIds, departmentId: current.departmentId }
+          : input,
+        role
+      );
       const { data, error } = await client
         .from('app_users')
         .update({
           display_name: input.displayName?.trim() || current.displayName || current.username,
-          department_id: input.departmentId || null,
+          department_id: departmentIds[0] || null,
           role,
           status: normalizeUserStatus(input.status || current.status || 'Active'),
           permissions: input.permissions === undefined
@@ -165,7 +173,8 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      await syncUserDepartments(client, id, departmentIds);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async updatePreferences(id, preferences = {}) {
       const current = await this.get(id);
@@ -184,7 +193,7 @@ function usersRepo(client) {
         .select()
         .single();
       if (error) throw error;
-      return mapUser(data);
+      return await hydrateUserDepartments(client, mapUser(data));
     },
     async delete(id, currentUserId) {
       if (String(id) === String(currentUserId)) throw new Error('Cannot delete current user');
@@ -847,6 +856,68 @@ async function getProjectRow(client, id) {
   return data || null;
 }
 
+async function hydrateUserDepartments(client, user) {
+  if (!user) return user;
+  return (await hydrateUsersDepartments(client, [user]))[0] || user;
+}
+
+async function hydrateUsersDepartments(client, users) {
+  if (!users.length) return users;
+  const userIds = users.map(user => user.id).filter(Boolean);
+  if (!userIds.length) return users;
+  const { data, error } = await client
+    .from('user_departments')
+    .select('*')
+    .in('user_id', userIds);
+  if (isMissingTableError(error)) {
+    return users.map(user => ({
+      ...user,
+      departmentIds: user.departmentId ? [user.departmentId] : []
+    }));
+  }
+  if (error) throw error;
+  const byUserId = new Map();
+  for (const row of data || []) {
+    const key = String(row.user_id);
+    byUserId.set(key, [...(byUserId.get(key) || []), row.department_id]);
+  }
+  return users.map(user => {
+    const departmentIds = byUserId.get(String(user.id)) || (user.departmentId ? [user.departmentId] : []);
+    return {
+      ...user,
+      departmentId: user.role === 'Admin' ? null : (departmentIds[0] || user.departmentId || null),
+      departmentIds: user.role === 'Admin' ? [] : departmentIds
+    };
+  });
+}
+
+async function syncUserDepartments(client, userId, departmentIds) {
+  const { data: existingRows, error: existingError } = await client
+    .from('user_departments')
+    .select('*')
+    .eq('user_id', userId);
+  if (isMissingTableError(existingError)) return;
+  if (existingError) throw existingError;
+  const existingIds = new Set((existingRows || []).map(row => String(row.department_id)));
+  const nextIds = new Set(departmentIds.map(id => String(id)));
+  for (const departmentId of existingIds) {
+    if (nextIds.has(departmentId)) continue;
+    const { error } = await client
+      .from('user_departments')
+      .delete()
+      .eq('user_id', userId)
+      .eq('department_id', departmentId);
+    if (error) throw error;
+  }
+  for (const departmentId of nextIds) {
+    if (existingIds.has(departmentId)) continue;
+    const { error } = await client
+      .from('user_departments')
+      .insert({ user_id: userId, department_id: departmentId });
+    if (error) throw error;
+  }
+}
+
 async function resolveVaultId(client, ownerAuthUserId) {
   if (!ownerAuthUserId) return null;
   const existing = await client
@@ -910,7 +981,8 @@ function mapUser(row) {
     authUserId: row.auth_user_id || null,
     username: row.username,
     displayName: row.display_name || row.username,
-    departmentId: row.department_id || null,
+    departmentId: role === 'Admin' ? null : (row.department_id || null),
+    departmentIds: role === 'Admin' || !row.department_id ? [] : [row.department_id],
     role,
     status: normalizeUserStatus(row.status),
     permissions: normalizePermissions(row.permissions, role),
@@ -1159,10 +1231,27 @@ function normalizePermissions(input, role) {
   return uniqueStrings(Array.isArray(input) ? input : []).filter(permission => allowed.has(permission));
 }
 
+function normalizeUserDepartmentIds(input = {}, role = 'Viewer') {
+  if (normalizeRole(role) === 'Admin') return [];
+  const ids = Array.isArray(input.departmentIds)
+    ? input.departmentIds
+    : input.departmentId
+      ? [input.departmentId]
+      : [];
+  return uniqueStrings(ids);
+}
+
 function isMissingSingleRowError(error) {
   if (!error) return false;
   return error.code === 'PGRST116'
     || /Cannot coerce the result to a single JSON object/i.test(error.message || '');
+}
+
+function isMissingTableError(error) {
+  if (!error) return false;
+  return error.code === '42P01'
+    || error.code === 'PGRST205'
+    || /relation .* does not exist|Could not find the table/i.test(error.message || '');
 }
 
 function uniqueStrings(values) {

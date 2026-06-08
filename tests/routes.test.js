@@ -380,7 +380,8 @@ test('project members only receive credentials for their department', async () =
       status: 'Active',
       permissions: [],
       authUserId: 'auth-sales',
-      departmentId: 'department-sales'
+      departmentId: 'department-sales',
+      departmentIds: ['department-sales', 'department-support']
     }],
     departments: [
       { id: 'department-sales', name: 'Sales', sortOrder: 1 },
@@ -415,6 +416,7 @@ test('project members only receive credentials for their department', async () =
       status: 'Active',
       credentials: [
         { id: 'credential-sales', entryId: 'entry-web', departmentId: 'department-sales', username: 'sales-user', password: 'sales-pass' },
+        { id: 'credential-support', entryId: 'entry-web', departmentId: 'department-support', username: 'support-user', password: 'support-pass' },
         { id: 'credential-finance', entryId: 'entry-web', departmentId: 'department-finance', username: 'finance-user', password: 'finance-pass' }
       ]
     }]
@@ -444,7 +446,7 @@ test('project members only receive credentials for their department', async () =
     })).json();
     assert.equal(entries.length, 1);
     assert.equal(entries[0].username, 'sales-user');
-    assert.deepEqual(entries[0].credentials.map(credential => credential.username), ['sales-user']);
+    assert.deepEqual(entries[0].credentials.map(credential => credential.username), ['sales-user', 'support-user']);
 
     const allowedReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-sales/reveal-password`, {
       method: 'POST',
@@ -452,6 +454,13 @@ test('project members only receive credentials for their department', async () =
     });
     assert.equal(allowedReveal.status, 200);
     assert.equal((await allowedReveal.json()).password, 'sales-pass');
+
+    const secondDepartmentReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-support/reveal-password`, {
+      method: 'POST',
+      headers: { cookie }
+    });
+    assert.equal(secondDepartmentReveal.status, 200);
+    assert.equal((await secondDepartmentReveal.json()).password, 'support-pass');
 
     const deniedReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-finance/reveal-password`, {
       method: 'POST',
@@ -1261,7 +1270,8 @@ function createMemoryRepos(overrides = {}) {
           status: bootstrapAdmin ? 'Active' : 'Pending',
           permissions: bootstrapAdmin ? ['users.manage'] : [],
           preferences: {},
-          departmentId: null
+          departmentId: null,
+          departmentIds: []
         };
         rows.users.push(user);
         return user;
@@ -1281,7 +1291,8 @@ function createMemoryRepos(overrides = {}) {
           status: input.status || 'Active',
           permissions: input.permissions || [],
           preferences: input.preferences || {},
-          departmentId: input.departmentId || null
+          departmentId: input.role === 'Admin' ? null : (input.departmentIds?.[0] || input.departmentId || null),
+          departmentIds: input.role === 'Admin' ? [] : (input.departmentIds || (input.departmentId ? [input.departmentId] : []))
         };
         rows.users.push(user);
         return user;
@@ -1294,6 +1305,13 @@ function createMemoryRepos(overrides = {}) {
       async update(id, input) {
         const user = rows.users.find(item => item.id === id);
         Object.assign(user, input);
+        if (input.role === 'Admin') {
+          user.departmentId = null;
+          user.departmentIds = [];
+        } else if (input.departmentIds) {
+          user.departmentIds = input.departmentIds;
+          user.departmentId = input.departmentIds[0] || null;
+        }
         return user;
       },
       async updatePreferences(id, preferences) {

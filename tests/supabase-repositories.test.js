@@ -160,7 +160,53 @@ test('creates departments and assigns them to Supabase users', async () => {
 
   assert.deepEqual(departments.map(item => item.name), ['Marketing']);
   assert.equal(user.departmentId, department.id);
+  assert.deepEqual(user.departmentIds, [department.id]);
   assert.equal(rows.app_users[0].department_id, department.id);
+});
+
+test('assigns multiple departments to non-admin users and clears them for admins', async () => {
+  const rows = createRows();
+  rows.app_users.push({
+    id: 'user-multi-dept',
+    username: 'multi@example.com',
+    display_name: 'Multi Dept',
+    role: 'Viewer',
+    status: 'Active',
+    permissions: [],
+    created_at: '2026-05-27T00:00:00.000Z'
+  });
+  rows.departments.push(
+    { id: 'department-sales', name: 'Sales', sort_order: 1 },
+    { id: 'department-support', name: 'Support', sort_order: 2 }
+  );
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 12)
+  });
+
+  const viewer = await repos.users.update('user-multi-dept', {
+    displayName: 'Multi Dept',
+    role: 'Viewer',
+    status: 'Active',
+    departmentIds: ['department-sales', 'department-support'],
+    permissions: []
+  });
+
+  assert.equal(viewer.departmentId, 'department-sales');
+  assert.deepEqual(viewer.departmentIds, ['department-sales', 'department-support']);
+  assert.deepEqual(rows.user_departments.map(row => row.department_id), ['department-sales', 'department-support']);
+
+  const admin = await repos.users.update('user-multi-dept', {
+    displayName: 'Multi Dept',
+    role: 'Admin',
+    status: 'Active',
+    departmentIds: ['department-sales'],
+    permissions: ['users.manage']
+  });
+
+  assert.equal(admin.departmentId, null);
+  assert.deepEqual(admin.departmentIds, []);
+  assert.deepEqual(rows.user_departments, []);
 });
 
 test('lists entry types from Supabase', async () => {
@@ -379,6 +425,7 @@ function createRows() {
     vaults: [],
     projects: [],
     departments: [],
+    user_departments: [],
     entry_types: [],
     entries: [],
     entry_credentials: [],

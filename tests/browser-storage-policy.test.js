@@ -58,7 +58,8 @@ test('user management UI exposes pending Google access requests for admin approv
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(html, /<option>Pending<\/option>/);
-  assert.match(userDialog, /name="departmentId"/);
+  assert.match(userDialog, /name="departmentIds"/);
+  assert.match(userDialog, /multiple/);
   assert.match(userDialog, /id="departmentQuickAdd"/);
   assert.match(userManagementDialog, /id="userManagementList"/);
   assert.match(userManagementDialog, /id="addUserBtn"/);
@@ -71,7 +72,8 @@ test('user management UI exposes pending Google access requests for admin approv
   assert.match(app, /state\.departments/);
   assert.match(app, /api\('\/api\/departments'\)/);
   assert.match(app, /api\('\/api\/departments',\s*\{/);
-  assert.match(app, /departmentId:\s*form\.departmentId\.value \|\| null/);
+  assert.match(app, /departmentIds:\s*form\.role\.value === 'Admin' \? \[\] : selectedUserDepartmentIds\(\)/);
+  assert.match(app, /function syncUserDepartmentVisibility/);
   assert.match(app, /user\.status === 'Pending'[\s\S]+form\.status\.value = 'Active'/);
   assert.match(app, /\['Invited', 'Expired'\]\.includes\(user\.status\)[\s\S]+data-invite-user/);
 });
