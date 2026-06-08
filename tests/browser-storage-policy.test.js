@@ -106,11 +106,16 @@ test('user management UI exposes pending Google access requests for admin approv
 
 test('Google OAuth always prompts for account selection', () => {
   const app = readFileSync('public/app.js', 'utf8');
+  const resolveGoogleRedirectUrl = app.match(/function resolveGoogleRedirectUrl\(\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(app, /signInWithOAuth\(\{[\s\S]+provider:\s*'google'/);
   assert.match(app, /queryParams:\s*\{[\s\S]+prompt:\s*'select_account'/);
   assert.match(app, /function resolveGoogleRedirectUrl\(\)/);
   assert.match(app, /redirectTo:\s*resolveGoogleRedirectUrl\(\)/);
+  assert.match(app, /function isLocalHttpOrigin\(origin\)/);
+  assert.match(resolveGoogleRedirectUrl, /const currentOrigin = String\(window\.location\.origin/);
+  assert.match(resolveGoogleRedirectUrl, /if \(\(currentOrigin\.startsWith\('https:\/\/'\) && !isLocalHttpOrigin\(currentOrigin\)\) \|\| currentOrigin\.startsWith\('capacitor:\/\/'\)\) return currentOrigin;/);
+  assert.match(resolveGoogleRedirectUrl, /if \(configured\) return configured;/);
 });
 
 test('frontend exposes light mix and dark theme modes without Web Storage', () => {
@@ -533,6 +538,8 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.match(renderProjects, /const wasExpanded = state\.expandedProjectIds\.has\(projectId\);/);
   assert.match(renderProjects, /if \(wasSelected && wasExpanded\) \{/);
   assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\);/);
+  assert.match(renderSystemSubmenu, /const expanded = projectId && state\.expandedProjectIds\.has\(projectId\);/);
+  assert.doesNotMatch(renderSystemSubmenu, /expandedProjectIds\.has\(projectId\) \|\| String\(state\.selectedProjectId\)/);
   assert.match(renderSystemSubmenu, /data-system-filter="\$\{system\.id\}"/);
   assert.match(renderSystemSubmenu, /data-edit-system="\$\{system\.id\}"/);
   assert.match(renderSystemSubmenu, /data-delete-system="\$\{system\.id\}"/);
