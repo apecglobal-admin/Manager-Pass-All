@@ -395,6 +395,7 @@ test('system-based account flow treats account type as metadata', () => {
 test('account form manages department-scoped credentials', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
   const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
   const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
@@ -409,6 +410,18 @@ test('account form manages department-scoped credentials', () => {
   assert.match(saveEntry, /data\.credentials = collectEntryCredentials\(\)/);
   assert.match(renderDetail, /credentialDetailRows\(entry/);
   assert.match(credentialDetailRows, /entry\.credentials/);
+  assert.match(credentialDetailRows, /credential-detail-table/);
+  assert.match(credentialDetailRows, /credential-detail-head/);
+  assert.match(credentialDetailRows, /credential-detail-row/);
+  assert.match(credentialDetailRows, /credential-password-actions/);
+  assert.doesNotMatch(credentialDetailRows, /credential-detail-item/);
+  assert.doesNotMatch(credentialDetailRows, /<div class="secret-row">[\s\S]+<div class="secret-row">/);
+  assert.match(css, /\.credential-detail-table[\s\S]+max-height:\s*320px/);
+  assert.match(css, /\.credential-detail-table[\s\S]+overflow-y:\s*auto/);
+  assert.match(css, /\.credential-detail-row[\s\S]+grid-template-columns/);
+  assert.match(css, /\.credential-password-actions[\s\S]+justify-content:\s*flex-end/);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.credential-detail-row[\s\S]+grid-template-columns:\s*1fr/);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]+\.credential-password-actions[\s\S]+justify-content:\s*flex-start/);
   assert.match(app, /\/api\/entries\/\$\{entryId\}\/credentials\/\$\{credentialId\}\/reveal-password/);
 });
 

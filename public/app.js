@@ -1615,32 +1615,51 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
   const credentials = entry.credentials?.length
     ? entry.credentials
     : [{ id: '', entryId: entry.id, departmentId: '', username: entry.username || '' }];
-  return credentials.map(credential => {
+  const rows = credentials.map(credential => {
     const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
     const password = state.revealCache.get(credentialKey) || '************';
     return `
-      <div class="credential-detail-item">
-        <div class="secret-row">
+      <div class="credential-detail-row" role="row">
+        <div class="credential-cell credential-department-cell" role="cell">
           <span class="secret-icon">${svgIcon('user')}</span>
           <div>
-            <small>${escapeHtml(departmentName(credential.departmentId) || 'Phòng ban')}</small>
+            <small>Phòng ban</small>
+            <strong>${escapeHtml(departmentName(credential.departmentId) || 'Chưa phân phòng ban')}</strong>
+          </div>
+        </div>
+        <div class="credential-cell" role="cell">
+          <div>
+            <small>Username</small>
             <strong>${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
           </div>
-          ${canViewUsername && credential.username ? `<button class="ghost-btn" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
+          ${canViewUsername && credential.username ? `<button class="ghost-btn compact-copy" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
         </div>
-        <div class="secret-row">
-          <span class="secret-icon">${svgIcon('key')}</span>
+        <div class="credential-cell credential-password-cell" role="cell">
           <div>
             <small>Mật khẩu</small>
             <strong class="password-text">${escapeHtml(password)}</strong>
           </div>
-          ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-          <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
-          <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+          <div class="credential-password-actions">
+            ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
+            <button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>
+            <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+          </div>
         </div>
       </div>
     `;
   }).join('');
+  return `
+    <div class="credential-detail-table" role="table" aria-label="User theo phòng ban">
+      <div class="credential-detail-head" role="row">
+        <span>Phòng ban</span>
+        <span>Username</span>
+        <span>Mật khẩu</span>
+      </div>
+      <div class="credential-detail-body">
+        ${rows}
+      </div>
+    </div>
+  `;
 }
 
 function addEntryCredentialRow(credential = {}) {
