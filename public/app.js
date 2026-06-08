@@ -1147,7 +1147,6 @@ function closeItemMenus() {
 
 function renderDetail(entry) {
   const aside = $('#detailAside');
-  if (state.view === 'users') { if (aside) aside.classList.add('open'); return renderUsersPanel(); }
   if (!entry) {
     $('#detailPanel').className = 'detail-empty';
     $('#detailPanel').innerHTML = `
@@ -1925,13 +1924,34 @@ function renderCurrentUser() {
 
 async function showUsersPanel() {
   if (!can('users.manage')) return toast('Bạn không có quyền quản lý người dùng');
-  state.view = 'users';
   await loadDepartments();
   state.users = await api('/api/users');
   renderUsersPanel();
+  $('#userManagementDialog').showModal();
 }
 
 function renderUsersPanel() {
+  const list = $('#userManagementList');
+  if (list) {
+    list.innerHTML = state.users.map(user => `
+      <article class="user-card">
+        <div>
+          <strong>${escapeHtml(user.displayName || user.username)}</strong>
+          <small>${escapeHtml(user.username)} - ${escapeHtml(user.status)}</small>
+        </div>
+        <span class="role-chip">${escapeHtml(user.role)}</span>
+        ${user.departmentId ? `<span class="department-chip">${escapeHtml(departmentName(user.departmentId))}</span>` : ''}
+        <p>${permissionSummary(user)}</p>
+        <div class="user-actions">
+          <button data-edit-user="${user.id}">${user.status === 'Pending' ? 'Duyệt & phân quyền' : 'Sửa'}</button>
+          ${['Invited', 'Expired'].includes(user.status) ? `<button data-invite-user="${user.id}">Gửi email mời</button>` : ''}
+          ${Number(user.id) === Number(state.currentUser?.id) ? '' : `<button data-delete-user="${user.id}">Xóa</button>`}
+        </div>
+      </article>
+    `).join('');
+    bindUserManagementActions();
+    return;
+  }
   const aside = $('#detailAside');
   if (aside) aside.classList.add('open');
   $('#detailPanel').className = 'detail-content users-panel';
@@ -1973,6 +1993,19 @@ function renderUsersPanel() {
     button.addEventListener('click', () => resendUserInvite(button.dataset.inviteUser));
   });
   document.querySelectorAll('[data-delete-user]').forEach(button => {
+    button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
+  });
+}
+
+function bindUserManagementActions() {
+  $('#addUserBtn')?.addEventListener('click', () => openUserDialog());
+  document.querySelectorAll('#userManagementDialog [data-edit-user]').forEach(button => {
+    button.addEventListener('click', () => openUserDialog(state.users.find(user => String(user.id) === String(button.dataset.editUser))));
+  });
+  document.querySelectorAll('#userManagementDialog [data-invite-user]').forEach(button => {
+    button.addEventListener('click', () => resendUserInvite(button.dataset.inviteUser));
+  });
+  document.querySelectorAll('#userManagementDialog [data-delete-user]').forEach(button => {
     button.addEventListener('click', () => deleteUser(button.dataset.deleteUser));
   });
 }

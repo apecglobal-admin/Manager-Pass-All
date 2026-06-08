@@ -1097,10 +1097,14 @@ dialog { width: min(520px, calc(100vw - 20px)); max-width: calc(100vw - 20px); m
 #projectMembersDialog,
 #memberPermissionDialog,
 #entryTypeDialog { width: min(820px, calc(100vw - 20px)); }
+#userManagementDialog { width: min(1120px, calc(100vw - 24px)); }
 dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .modal-form { display: grid; gap: 14px; padding: 18px; max-height: calc(100vh - 20px); overflow-y: auto; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .modal-head h3 { margin: 0; font-size: 20px; }
+.modal-head p { margin: 4px 0 0; }
+.dialog-head-actions { display: flex; align-items: center; gap: 8px; }
+.users-management-modal { max-height: min(820px, calc(100vh - 24px)); }
 .close-x { width: 28px; height: 28px; padding: 0; background: transparent; color: var(--text3); }
 .secure-chip { color: var(--accent-light); background: var(--accent-dim); border: 1px solid rgba(124, 58, 237, .15); border-radius: var(--r-pill); padding: 3px 8px; font-size: 11px; font-weight: 900; white-space: nowrap; }
 .form-section,

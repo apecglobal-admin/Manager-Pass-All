@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260606-department-credentials">
+    <link rel="stylesheet" href="/styles.css?v=20260608-user-dialog">
   </head>
   <body>
 
@@ -236,6 +236,21 @@
         <section class="form-section compact-section"><div class="section-label">DANH SÁCH</div><div id="entryTypeList" class="type-manager-list"></div></section>
       </form>
     </dialog>
+    <dialog id="userManagementDialog">
+      <div class="modal-form wide users-management-modal">
+        <div class="modal-head">
+          <div>
+            <h3>Người dùng & phân quyền</h3>
+            <p class="form-hint"><span class="tag-dot"></span> Tài khoản nội bộ</p>
+          </div>
+          <div class="dialog-head-actions">
+            <button id="addUserBtn" type="button" class="btn-accent">+ Thêm user</button>
+            <button type="button" class="close-x" data-close-dialog>✕</button>
+          </div>
+        </div>
+        <section id="userManagementList" class="users-grid"></section>
+      </div>
+    </dialog>
     <dialog id="userDialog">
       <form id="userForm" method="dialog" class="modal-form">
         <div class="modal-head"><h3>Người dùng</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
@@ -261,6 +276,6 @@
     <div id="toast" class="toast"></div>
     <script src="/runtime-config.js?v=20260604-runtime-config"></script>
     <script src="/supabase-client.js?v=20260521-5"></script>
-    <script src="/app.js?v=20260606-department-credentials"></script>
+    <script src="/app.js?v=20260608-user-dialog"></script>
   </body>
 </html>

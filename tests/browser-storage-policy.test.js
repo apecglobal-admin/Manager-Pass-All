@@ -53,10 +53,18 @@ test('user management UI exposes pending Google access requests for admin approv
   const app = readFileSync('public/app.js', 'utf8');
   const html = readFileSync('public/index.html', 'utf8');
   const userDialog = html.match(/<dialog id="userDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const userManagementDialog = html.match(/<dialog id="userManagementDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const showUsersPanel = app.match(/async function showUsersPanel\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(html, /<option>Pending<\/option>/);
   assert.match(userDialog, /name="departmentId"/);
   assert.match(userDialog, /id="departmentQuickAdd"/);
+  assert.match(userManagementDialog, /id="userManagementList"/);
+  assert.match(userManagementDialog, /id="addUserBtn"/);
+  assert.match(showUsersPanel, /userManagementDialog'\)\.showModal\(\)/);
+  assert.doesNotMatch(showUsersPanel, /state\.view = 'users'/);
+  assert.doesNotMatch(renderDetail, /renderUsersPanel/);
   assert.match(app, /Yêu cầu tham gia|YÃªu cáº§u tham gia|Yeu cau tham gia/);
   assert.match(app, /Chờ admin phê duyệt|Chá» admin phÃª duyá»‡t|Cho admin phe duyet/);
   assert.match(app, /Duyệt & phân quyền|Duyá»‡t & phÃ¢n quyá»n|Duyet & phan quyen/);
