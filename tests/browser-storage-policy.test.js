@@ -306,6 +306,8 @@ test('entry actions use project-scoped permissions instead of global account per
   assert.doesNotMatch(newEntryButton, /disabled/);
   assert.match(renderHeader, /newEntryButton\.disabled = !canShowNewEntry/);
   assert.match(renderHeader, /newEntryBtn'\)\?\.classList\.toggle\('hidden'/);
+  assert.match(renderHeader, /state\.selectedSystemId/);
+  assert.match(renderHeader, /Chọn hệ thống trước khi thêm account/);
   assert.doesNotMatch(applyPermissionUi, /npb\.disabled = !isAdmin\(\)/);
   assert.match(applyPermissionUi, /npb\?\.classList\.toggle\('hidden', !isAdmin\(\)\)/);
   assert.match(renderHeader, /canCreateEntry/);
@@ -339,12 +341,18 @@ test('revealed passwords show a 20 second countdown before masking again', () =>
   assert.match(app, /state\.revealCache\.delete\(cacheKey\)/);
   assert.match(revealPassword, /setRevealedPassword\(credentialId \? `\$\{id\}:\$\{credentialId\}` : id, result\.password\)/);
   assert.match(credentialDetailRows, /data-reveal-countdown/);
-  assert.match(credentialDetailRows, /Ẩn sau \$\{revealSecondsRemaining\(revealState\)\}s/);
+  assert.match(credentialDetailRows, /\$\{revealSecondsRemaining\(revealState\)\}s/);
+  assert.doesNotMatch(credentialDetailRows, /Ẩn sau/);
   assert.match(credentialDetailRows, /const revealAction = revealState/);
-  assert.match(credentialDetailRows, /\? `<span class="reveal-countdown"/);
-  assert.match(credentialDetailRows, /: `<button class="ghost-btn" data-reveal=/);
+  assert.match(credentialDetailRows, /\? `<span class="reveal-countdown reveal-countdown-compact"/);
+  assert.match(credentialDetailRows, /: `<button class="icon-btn-only" data-reveal=/);
   assert.doesNotMatch(credentialDetailRows, /<strong class="password-text">\$\{escapeHtml\(password\)\}<\/strong>\s*\$\{revealAction\}/);
-  assert.match(credentialDetailRows, /<span class="risk-badge">Nhạy cảm<\/span>\s*\$\{revealAction\}/);
+  assert.doesNotMatch(credentialDetailRows, /Nhạy cảm|Nháº¡y cáº£m/);
+  assert.match(credentialDetailRows, /class="credential-fields-row"/);
+  assert.match(credentialDetailRows, /class="credential-field-actions"/);
+  assert.match(credentialDetailRows, /title="Xem mật khẩu"/);
+  assert.match(credentialDetailRows, /title="Copy mật khẩu"/);
+  assert.match(credentialDetailRows, /title="Copy username"/);
 });
 
 test('accounts stay hidden while systems remain selectable', () => {
@@ -465,10 +473,34 @@ test('account form manages department-scoped credentials', () => {
   assert.match(credentialDetailRows, /credentialDepartmentName\(credential\)/);
   assert.doesNotMatch(credentialDetailRows, /departmentName\(credential\.departmentId\) \|\| 'Phòng ban'/);
   assert.match(credentialDetailRows, /<small>Username<\/small>/);
+  assert.match(credentialDetailRows, /<small>Password<\/small>/);
+  assert.match(credentialDetailRows, /credential-fields-row/);
+  assert.match(credentialDetailRows, /icon-btn-only/);
   assert.doesNotMatch(credentialDetailRows, /<small>\$\{escapeHtml\(departmentName\(credential\.departmentId\)/);
   assert.match(css, /\.credential-department-title[\s\S]+font-size:\s*15px/);
   assert.match(css, /\.credential-department-title[\s\S]+font-weight:\s*900/);
+  assert.match(css, /\.credential-fields-row[\s\S]+grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
   assert.match(app, /\/api\/entries\/\$\{entryId\}\/credentials\/\$\{credentialId\}\/reveal-password/);
+});
+
+test('project logo is selected from an image file and stored as form data url', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const projectDialog = html.match(/<dialog id="projectDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const bindEvents = app.match(/function bindEvents\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const openProjectDialog = app.match(/async function openProjectDialog\(project = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveProject = app.match(/async function saveProject\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderHeader = app.match(/function renderHeader\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(projectDialog, /type="file" id="projectLogoInput" accept="image\/\*"/);
+  assert.doesNotMatch(projectDialog, /type="url"|name="logoUrl"[^>]*type="url"/);
+  assert.match(bindEvents, /projectLogoInput'\)\?\.addEventListener\('change', handleProjectLogoFile/);
+  assert.match(app, /function handleProjectLogoFile\(event\)/);
+  assert.match(app, /FileReader/);
+  assert.match(app, /reader\.readAsDataURL\(file\)/);
+  assert.match(openProjectDialog, /setProjectLogoValue\(project\.logoUrl \|\| ''\)/);
+  assert.match(saveProject, /data\.logoUrl = \(\$\(\'#projectLogoUrl\'\)\?\.value \|\| ''\)/);
+  assert.match(renderHeader, /renderProjectLogo\(project\)/);
 });
 
 test('project system dialog only edits one system and closes after save', () => {
@@ -487,7 +519,7 @@ test('new accounts are created from the active project system', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const canCreateEntry = app.match(/function canCreateEntry\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const firstCreatableSystemId = app.match(/function firstCreatableSystemId\(\) \{[\s\S]+?\n\}/)?.[0] || '';
-  const loadProjectSystems = app.match(/async function loadProjectSystems\(projectId = state\.selectedProjectId\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const loadProjectSystems = app.match(/async function loadProjectSystems\(projectId = state\.selectedProjectId, \{ autoSelect = false \} = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderSystemSubmenu = app.match(/function renderSystemSubmenu\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const openEntryDialog = app.match(/async function openEntryDialog\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
 
@@ -496,6 +528,7 @@ test('new accounts are created from the active project system', () => {
   assert.match(firstCreatableSystemId, /isAdmin\(\) \? state\.projectSystems\[0\]\?\.id/);
   assert.match(firstCreatableSystemId, /permissionForProjectSystem\(system\.id\)\?\.canCreate/);
   assert.match(loadProjectSystems, /state\.projectSystemsByProjectId\[String\(projectId\)\] = systems/);
+  assert.match(loadProjectSystems, /if \(!autoSelect\) return systems/);
   assert.match(loadProjectSystems, /state\.selectedSystemId = systems\[0\]\.id/);
   assert.doesNotMatch(renderSystemSubmenu, /data-system-filter="All"|Táº¥t cáº£ há»‡ thá»‘ng|TÃ¡ÂºÂ¥t cÃ¡ÂºÂ£ hÃ¡Â»â€¡ thÃ¡Â»â€˜ng/);
   assert.doesNotMatch(openEntryDialog, /Chọn một hệ thống cụ thể trước khi thêm account/);
@@ -538,6 +571,9 @@ test('project sidebar renders systems as submenu while content only shows accoun
   assert.match(renderProjects, /const wasExpanded = state\.expandedProjectIds\.has\(projectId\);/);
   assert.match(renderProjects, /if \(wasSelected && wasExpanded\) \{/);
   assert.match(renderProjects, /state\.expandedProjectIds\.delete\(projectId\);/);
+  assert.doesNotMatch(renderProjects, /if \(!wasSelected\) state\.selectedSystemId = null;/);
+  assert.doesNotMatch(renderProjects, /await loadEntries\(\);/);
+  assert.match(renderProjects, /await loadProjectSystems\(projectId, \{ autoSelect: true \}\)/);
   assert.match(renderSystemSubmenu, /const expanded = projectId && state\.expandedProjectIds\.has\(projectId\);/);
   assert.doesNotMatch(renderSystemSubmenu, /expandedProjectIds\.has\(projectId\) \|\| String\(state\.selectedProjectId\)/);
   assert.match(renderSystemSubmenu, /data-system-filter="\$\{system\.id\}"/);
@@ -727,6 +763,8 @@ test('account detail panel remains visible when no account is selected', () => {
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(renderDetail, /if \(!entry\) \{/);
+  assert.match(renderDetail, /state\.selectedSystemId \? 'Chọn một account' : 'Chọn một hệ thống'/);
+  assert.match(renderDetail, /state\.selectedSystemId \? 'Chi tiết sẽ hiển thị ở đây' : 'Chọn hệ thống trong sidebar để xem account'/);
   assert.match(renderDetail, /if \(aside\) aside\.classList\.add\('open'\)/);
   assert.doesNotMatch(renderDetail, /if \(aside\) aside\.classList\.remove\('open'\)/);
   assert.doesNotMatch(css, /\.content-body:has\(\.detail-aside\.open\) \.system-account-card/);

@@ -122,8 +122,11 @@
         <!-- Content header: title + filters + add button -->
         <section class="content-header">
           <div class="content-title">
+            <div id="currentProjectLogo" class="project-header-logo hidden"></div>
+            <div class="project-header-text">
             <h2 id="currentProjectName">Vault</h2>
             <small id="currentProjectMeta">Workspace</small>
+            </div>
           </div>
           <button id="toggleEntryDeleteModeBtn" class="btn-outline hidden" type="button">Chọn xóa account</button>
           <button id="deleteSelectedEntriesBtn" class="btn-outline danger hidden" type="button">Xóa account đã chọn</button>
@@ -132,6 +135,7 @@
 
         <!-- Content body: account detail only -->
         <section class="content-body">
+          <div id="entryGridContainer" class="grid-area"></div>
           <aside class="detail-aside" id="detailAside">
             <div id="detailPanel" class="detail-empty">
               <div class="empty-lock">🛡️</div>
@@ -152,6 +156,20 @@
         <div class="modal-head"><h3>Dự án</h3><button type="button" class="close-x" data-close-dialog>✕</button></div>
         <input name="id" type="hidden">
         <label><span class="label-text">Tên dự án</span><input name="name" required placeholder="VD: Apec CRM"></label>
+        <div class="project-logo-upload-section">
+          <span class="label-text">Logo dự án</span>
+          <div class="logo-upload-container">
+            <div class="logo-preview-box" id="projectLogoPreview">
+              <span class="logo-placeholder-text">Chưa có logo</span>
+            </div>
+            <div class="logo-upload-controls">
+              <input type="file" id="projectLogoInput" accept="image/*" style="display: none;">
+              <button type="button" class="btn-outline" id="selectLogoBtn">Chọn ảnh</button>
+              <button type="button" class="btn-outline danger hidden" id="removeLogoBtn">Xóa</button>
+            </div>
+          </div>
+          <input type="hidden" name="logoUrl" id="projectLogoUrl">
+        </div>
         <label><span class="label-text">Mô tả</span><textarea name="description" placeholder="Ghi chú ngắn"></textarea></label>
         <label><span class="label-text">Trạng thái</span><select name="status"><option>Active</option><option>Inactive</option><option>Deprecated</option></select></label>
         <div class="modal-actions"><button type="button" class="btn-outline" data-close-dialog>Hủy</button><button id="saveProjectBtn" class="btn-accent" value="default">Lưu</button></div>

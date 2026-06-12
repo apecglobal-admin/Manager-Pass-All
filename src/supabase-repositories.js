@@ -336,6 +336,7 @@ function projectsRepo(client) {
           name: input.name.trim(),
           description: input.description || '',
           status: input.status || 'Active',
+          logo_url: input.logoUrl || null,
           sort_order: input.sortOrder || await nextProjectSortOrder(client)
         })
         .select()
@@ -349,6 +350,7 @@ function projectsRepo(client) {
       if (input.description !== undefined) patch.description = input.description || '';
       if (input.status !== undefined) patch.status = input.status || 'Active';
       if (input.sortOrder !== undefined) patch.sort_order = Number(input.sortOrder) || 0;
+      if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl || null;
       const { data, error } = await client
         .from('projects')
         .update(patch)
@@ -1027,6 +1029,7 @@ function mapProject(row) {
     name: row.name,
     description: row.description || '',
     status: row.status || 'Active',
+    logoUrl: row.logo_url || '',
     sortOrder: row.sort_order || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at

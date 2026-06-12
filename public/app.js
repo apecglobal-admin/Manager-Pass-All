@@ -78,6 +78,9 @@ function bindEvents() {
   $('#toggleEntryDeleteModeBtn')?.addEventListener('click', toggleEntryDeleteMode);
   $('#deleteSelectedEntriesBtn')?.addEventListener('click', deleteSelectedEntries);
   $('#projectForm').addEventListener('submit', saveProject);
+  $('#selectLogoBtn')?.addEventListener('click', () => $('#projectLogoInput')?.click());
+  $('#projectLogoInput')?.addEventListener('change', handleProjectLogoFile);
+  $('#removeLogoBtn')?.addEventListener('click', () => setProjectLogoValue(''));
   $('#addProjectMemberBtn')?.addEventListener('click', addSelectedProjectMember);
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
   $('#entryForm').addEventListener('submit', saveEntry);
@@ -576,13 +579,17 @@ async function loadEntries() {
     return;
   }
   try {
-    await loadProjectSystems();
+    await loadProjectSystems(state.selectedProjectId, { autoSelect: true });
   } catch (error) {
     state.projectSystems = [];
     state.selectedSystemId = null;
     toast(error.message);
   }
   renderProjects();
+  await refreshEntriesForSelectedProject();
+}
+
+async function refreshEntriesForSelectedProject() {
   try {
     state.entries = await api(`/api/projects/${state.selectedProjectId}/entries`);
     pruneSet(state.selectedEntryIds, new Set(state.entries.map(entry => String(entry.id))));
@@ -597,16 +604,17 @@ async function loadEntries() {
   }
 }
 
-async function loadProjectSystems(projectId = state.selectedProjectId) {
+async function loadProjectSystems(projectId = state.selectedProjectId, { autoSelect = false } = {}) {
   if (!projectId) {
     state.projectSystems = [];
     state.selectedSystemId = null;
-    return;
+    return [];
   }
   const systems = await api(`/api/projects/${projectId}/systems`);
   state.projectSystemsByProjectId[String(projectId)] = systems;
   if (String(projectId) !== String(state.selectedProjectId)) return systems;
   state.projectSystems = systems;
+  if (!autoSelect) return systems;
   if (!systems.length) {
     state.selectedSystemId = null;
     return systems;
@@ -624,7 +632,7 @@ function renderProjects() {
     .map(project => `
       <div class="project-node">
       <div class="project-chip ${String(project.id) === String(state.selectedProjectId) ? 'active' : ''} ${isAdmin() ? 'draggable-row' : ''}" data-id="${project.id}" data-drag-project="${project.id}" draggable="${isAdmin() ? 'true' : 'false'}">
-        <span class="chip-avatar">${projectIcon(project.name)}</span>
+        <span class="chip-avatar">${project.logoUrl ? `<img src="${escapeAttr(project.logoUrl)}" alt="${escapeAttr(project.name)}" style="width: 100%; height: 100%; object-fit: contain; border-radius: inherit;">` : projectIcon(project.name)}</span>
         <strong>${escapeHtml(project.name)}</strong>
         ${can('users.manage') || isAdmin() ? `
           <div class="item-menu-wrap account-menu-wrap">
@@ -650,12 +658,16 @@ function renderProjects() {
       renderProjects();
       return;
     }
-    if (!wasSelected) state.selectedSystemId = null;
+    if (!wasSelected) {
+      state.selectedSystemId = null;
+      state.selectedEntryId = null;
+    }
     state.selectedProjectId = projectId;
     clearRevealCache();
     state.expandedProjectIds.add(projectId);
     renderProjects();
-    await loadEntries();
+    await loadProjectSystems(projectId, { autoSelect: true });
+    await refreshEntriesForSelectedProject();
   }));
   document.querySelectorAll('[data-edit-project]').forEach(button => button.addEventListener('click', event => {
     event.stopPropagation();
@@ -857,22 +869,26 @@ function renderHeader() {
   const project = currentProject();
   const system = currentSystem();
   const missingSystems = Boolean(project && !state.projectSystems.length);
-  const canShowNewEntry = Boolean(project && !missingSystems && canCreateEntry());
+  const missingSystemSelection = Boolean(project && state.projectSystems.length && !state.selectedSystemId);
+  const canShowNewEntry = Boolean(project && !missingSystems && !missingSystemSelection && canCreateEntry());
   $('#newEntryBtn')?.classList.toggle('hidden', !canShowNewEntry);
   const newEntryButton = $('#newEntryBtn');
   if (newEntryButton) {
     newEntryButton.disabled = !canShowNewEntry;
     newEntryButton.title = missingSystems
       ? 'Tạo hệ thống trước khi thêm account'
+      : missingSystemSelection
+        ? 'Chọn hệ thống trước khi thêm account'
       : '';
   }
   const title = $('#currentProjectName');
   const meta = $('#currentProjectMeta');
   if (title) title.textContent = project?.name || 'Tất cả dự án';
   if (meta) {
-    const systemName = system ? system.name : 'He thong';
+    const systemName = state.selectedSystemId && system ? system.name : 'Chọn hệ thống';
     meta.textContent = `${state.projectSystems.length} hệ thống - ${systemName}`;
   }
+  renderProjectLogo(project);
   const search = $('#globalSearch');
   if (search) search.placeholder = project ? `Tìm trong ${project.name}...` : 'Tìm account, URL, username...';
   renderStats();
@@ -1084,7 +1100,8 @@ function bindSystemSubmenuActions() {
   document.querySelectorAll('[data-system-filter]').forEach(section => section.addEventListener('click', async event => {
     if (event.target.closest('[data-edit-system], [data-delete-system], [data-select], [data-edit], [data-delete], [data-select-entry], .item-menu-wrap')) return;
     const projectId = section.dataset.systemProjectId;
-    if (projectId && String(projectId) !== String(state.selectedProjectId)) {
+    const changedProject = projectId && String(projectId) !== String(state.selectedProjectId);
+    if (changedProject) {
       state.selectedProjectId = projectId;
       state.projectSystems = state.projectSystemsByProjectId[String(projectId)] || state.projectSystems;
     }
@@ -1092,7 +1109,8 @@ function bindSystemSubmenuActions() {
     state.selectedEntryId = null;
     clearRevealCache();
     state.expandedProjectIds.add(String(state.selectedProjectId));
-    await loadEntries();
+    if (changedProject) await loadEntries();
+    else renderEntries();
     renderHeader();
   }));
   document.querySelectorAll('.system-submenu .item-more-btn').forEach(button => button.addEventListener('click', event => {
@@ -1221,11 +1239,13 @@ function closeItemMenus() {
 function renderDetail(entry) {
   const aside = $('#detailAside');
   if (!entry) {
+    const emptyTitle = state.selectedSystemId ? 'Chọn một account' : 'Chọn một hệ thống';
+    const emptyText = state.selectedSystemId ? 'Chi tiết sẽ hiển thị ở đây' : 'Chọn hệ thống trong sidebar để xem account';
     $('#detailPanel').className = 'detail-empty';
     $('#detailPanel').innerHTML = `
       <div class="empty-lock">🛡️</div>
-      <h3>Chọn một account</h3>
-      <p>Chi tiết sẽ hiển thị ở đây</p>
+      <h3>${emptyTitle}</h3>
+      <p>${emptyText}</p>
     `;
     if (aside) aside.classList.add('open');
     return;
@@ -1309,6 +1329,44 @@ function projectIcon(name) {
   return String(name || 'P').slice(0, 2).toUpperCase();
 }
 
+function renderProjectLogo(project) {
+  const logo = $('#currentProjectLogo');
+  if (!logo) return;
+  const logoUrl = project?.logoUrl || '';
+  logo.classList.toggle('hidden', !logoUrl);
+  logo.innerHTML = logoUrl
+    ? `<img class="project-header-logo-img" src="${escapeAttr(logoUrl)}" alt="${escapeAttr(project?.name || 'Logo dự án')}">`
+    : '';
+}
+
+function setProjectLogoValue(value = '') {
+  const logoValue = $('#projectLogoUrl');
+  const preview = $('#projectLogoPreview');
+  const removeButton = $('#removeLogoBtn');
+  const fileInput = $('#projectLogoInput');
+  if (logoValue) logoValue.value = value;
+  if (fileInput && !value) fileInput.value = '';
+  if (preview) {
+    preview.innerHTML = value
+      ? `<img class="project-logo-preview-img" src="${escapeAttr(value)}" alt="Logo dự án">`
+      : '<span class="logo-placeholder-text">Chưa có logo</span>';
+  }
+  removeButton?.classList.toggle('hidden', !value);
+}
+
+function handleProjectLogoFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    setProjectLogoValue('');
+    toast('Vui lòng chọn file ảnh');
+    return;
+  }
+  const reader = new FileReader();
+  reader.addEventListener('load', () => setProjectLogoValue(String(reader.result || '')));
+  reader.readAsDataURL(file);
+}
+
 async function openProjectDialog(project = {}) {
   if (!isAdmin()) return toast('Chỉ admin được quản lý dự án');
   const form = $('#projectForm');
@@ -1316,6 +1374,7 @@ async function openProjectDialog(project = {}) {
   form.name.value = project.name || '';
   form.description.value = project.description || '';
   form.status.value = project.status || 'Active';
+  setProjectLogoValue(project.logoUrl || '');
   $('#projectDialog').showModal();
   focusDialogField('#projectDialog', 'input[name="name"]');
 }
@@ -1325,6 +1384,7 @@ async function saveProject(event) {
   const data = Object.fromEntries(new FormData(event.target));
   const id = data.id;
   delete data.id;
+  data.logoUrl = ($('#projectLogoUrl')?.value || '');
   const project = await api(id ? `/api/projects/${id}` : '/api/projects', {
     method: id ? 'PATCH' : 'POST',
     body: JSON.stringify(data)
@@ -1643,28 +1703,33 @@ function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }
     const revealState = revealedPasswordState(credentialKey);
     const password = revealState?.password || '************';
     const revealAction = revealState
-      ? `<span class="reveal-countdown" data-reveal-countdown="${escapeAttr(credentialKey)}">Ẩn sau ${revealSecondsRemaining(revealState)}s</span>`
-      : `<button class="ghost-btn" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}">${svgIcon('eye')} Xem</button>`;
+      ? `<span class="reveal-countdown reveal-countdown-compact" data-reveal-countdown="${escapeAttr(credentialKey)}">${revealSecondsRemaining(revealState)}s</span>`
+      : `<button class="icon-btn-only" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}" title="Xem mật khẩu" aria-label="Xem mật khẩu">${svgIcon('eye')}</button>`;
     return `
       <div class="credential-detail-item">
         <div class="credential-department-title">${escapeHtml(credentialDepartmentName(credential))}</div>
-        <div class="secret-row">
-          <span class="secret-icon">${svgIcon('user')}</span>
-          <div>
-            <small>Username</small>
-            <strong>${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+        <div class="credential-fields-row">
+          <div class="credential-field-group">
+            <span class="credential-field-icon">${svgIcon('user')}</span>
+            <div class="credential-field-content">
+              <small>Username</small>
+              <strong class="credential-field-val">${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+            </div>
+            <span class="credential-field-actions">
+              ${canViewUsername && credential.username ? `<button class="icon-btn-only" data-copy="${escapeAttr(credential.username)}" title="Copy username" aria-label="Copy username">${svgIcon('copy')}</button>` : ''}
+            </span>
           </div>
-          ${canViewUsername && credential.username ? `<button class="ghost-btn" data-copy="${escapeAttr(credential.username)}">${svgIcon('copy')} Copy</button>` : ''}
-        </div>
-        <div class="secret-row">
-          <span class="secret-icon">${svgIcon('key')}</span>
-          <div>
-            <small>Mật khẩu</small>
-            <strong class="password-text">${escapeHtml(password)}</strong>
+          <div class="credential-field-group">
+            <span class="credential-field-icon">${svgIcon('key')}</span>
+            <div class="credential-field-content">
+              <small>Password</small>
+              <strong class="credential-field-val password-text">${escapeHtml(password)}</strong>
+            </div>
+            <span class="credential-field-actions">
+              ${canRevealEntryPassword ? `${revealAction}
+              <button class="icon-btn-only" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}" title="Copy mật khẩu" aria-label="Copy mật khẩu">${svgIcon('copy')}</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+            </span>
           </div>
-          ${canRevealEntryPassword ? `<span class="risk-badge">Nhạy cảm</span>
-          ${revealAction}
-          <button class="ghost-btn" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}">${svgIcon('copy')} Copy</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
         </div>
       </div>
     `;
@@ -1781,7 +1846,7 @@ function startRevealCountdown(cacheKey) {
     }
     document.querySelectorAll('[data-reveal-countdown]').forEach(label => {
       if (label.dataset.revealCountdown === cacheKey) {
-        label.textContent = `Ẩn sau ${revealSecondsRemaining(revealState)}s`;
+        label.textContent = `${revealSecondsRemaining(revealState)}s`;
       }
     });
   };
