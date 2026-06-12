@@ -54,12 +54,7 @@ function loadDesktopEnv() {
   }
 }
 
-async function openExternalDesktopUrl() {
-  if (!app.isPackaged || !desktopTargetUrl) return false;
-  await shell.openExternal(desktopTargetUrl);
-  app.quit();
-  return true;
-}
+// Removed: openExternalDesktopUrl() - always use desktop app instead of opening web URL
 
 function createWindow() {
   const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -172,14 +167,10 @@ function getLatestReleaseUrl() {
 }
 
 app.whenReady().then(() => {
-  openExternalDesktopUrl()
-    .then(opened => {
-      if (opened) return;
-      return startLocalServer()
-        .then(() => {
-          createWindow();
-          configureAutoUpdater();
-        });
+  startLocalServer()
+    .then(() => {
+      createWindow();
+      configureAutoUpdater();
     })
     .catch(error => {
       log('Failed to start desktop app', error);
