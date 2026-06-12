@@ -85,7 +85,8 @@ export function createSupabaseDataStore({
             vault_id: vault.id,
             name: input.name.trim(),
             description: input.description || '',
-            status: input.status || 'Active'
+            status: input.status || 'Active',
+            logo_url: input.logoUrl || null
           })
           .select()
           .single();
@@ -100,6 +101,7 @@ export function createSupabaseDataStore({
             name: input.name.trim(),
             description: input.description || '',
             status: input.status || 'Active',
+            logo_url: input.logoUrl || null,
             updated_at: new Date().toISOString()
           })
           .eq('id', id)
@@ -240,6 +242,7 @@ function mapProject(row) {
     name: row.name,
     description: row.description || '',
     status: row.status || 'Active',
+    logoUrl: row.logo_url || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

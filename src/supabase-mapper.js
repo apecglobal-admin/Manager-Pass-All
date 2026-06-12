@@ -24,6 +24,7 @@ export function mapProjectToSupabaseRow(project) {
     name: project.name,
     description: project.description || '',
     status: project.status || 'Active',
+    logo_url: project.logoUrl || null,
     updated_at: project.updatedAt || new Date().toISOString(),
     deleted_at: project.deletedAt || null
   };
