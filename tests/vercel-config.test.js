@@ -17,8 +17,8 @@ test('Vercel deploy uses public assets and a serverless API handler', () => {
     { source: '/vendor/supabase.js', destination: '/api/index.js' }
   ]);
   assert.equal(pkg.scripts.build, 'npm run vercel:build');
-  assert.equal(pkg.scripts['vercel:build'], 'node --test');
-  assert.equal(pkg.engines.node, '24.x');
+  assert.equal(pkg.scripts['vercel:build'], 'node scripts/vercel-build.js');
+  assert.equal(pkg.engines.node, '22.x');
   assert.match(apiEntry, /createVercelHandler/);
   assert.match(apiEntry, /export default function handleVercelRequest/);
   assert.match(apiEntry, /handler \|\|= createVercelHandler\(\)/);
