@@ -1034,6 +1034,48 @@ function entryMatchesSystem(entry, systemId) {
   return String(entry.systemId || entry.projectSystemId || '') === String(systemId);
 }
 
+function systemEntries(systemId, rows = state.entries) {
+  return rows.filter(entry => entryMatchesSystem(entry, systemId));
+}
+
+function selectFallbackProjectSystem(removedSystemId) {
+  const fallback = state.projectSystems.find(system => String(system.id) !== String(removedSystemId));
+  state.selectedSystemId = fallback?.id || null;
+  state.selectedEntryId = null;
+}
+
+function upsertProjectSystem(projectId, system) {
+  const key = String(projectId);
+  const systems = state.projectSystemsByProjectId[key] || state.projectSystems;
+  const index = systems.findIndex(item => String(item.id) === String(system.id));
+  const nextSystems = index >= 0
+    ? systems.map(item => (String(item.id) === String(system.id) ? system : item))
+    : [...systems, system];
+  state.projectSystemsByProjectId[key] = nextSystems;
+  if (String(projectId) === String(state.selectedProjectId)) state.projectSystems = nextSystems;
+}
+
+function removeProjectSystem(projectId, systemId) {
+  const key = String(projectId);
+  const systems = state.projectSystemsByProjectId[key] || state.projectSystems;
+  const nextSystems = systems.filter(system => String(system.id) !== String(systemId));
+  state.projectSystemsByProjectId[key] = nextSystems;
+  if (String(projectId) === String(state.selectedProjectId)) state.projectSystems = nextSystems;
+}
+
+function upsertEntry(entry) {
+  if (!entry?.id) return false;
+  const index = state.entries.findIndex(item => String(item.id) === String(entry.id));
+  const existing = index >= 0 ? state.entries[index] : null;
+  const normalizedEntry = existing && !entry.permissions
+    ? { ...entry, permissions: existing.permissions }
+    : entry;
+  state.entries = index >= 0
+    ? state.entries.map(item => (String(item.id) === String(entry.id) ? normalizedEntry : item))
+    : [...state.entries, normalizedEntry];
+  return true;
+}
+
 function visibleEntries(rows = state.entries) {
   return rows.filter(entryMatchesSelectedSystem);
 }
@@ -1427,10 +1469,11 @@ async function saveProjectSystem(event) {
   }
   toast('Đã lưu hệ thống');
   if (savedSystem?.id) state.selectedSystemId = savedSystem.id;
-  await loadProjectSystems(projectId);
+  upsertProjectSystem(projectId, savedSystem);
   renderProjects();
   $('#projectSystemDialog')?.close();
-  await loadEntries();
+  renderHeader();
+  renderEntries();
 }
 
 function resetProjectSystemForm(projectId = state.selectedProjectId) {
@@ -1448,13 +1491,18 @@ async function deleteProjectSystem(id) {
   const projectId = state.selectedProjectId;
   const system = state.projectSystems.find(item => String(item.id) === String(id));
   if (!projectId || !system) return;
+  if (systemEntries(id).length) {
+    toast('Xóa hoặc chuyển account khỏi hệ thống trước');
+    return;
+  }
   if (!confirm(`Xóa hệ thống "${system.name}"?`)) return;
   try {
     await api(`/api/projects/${projectId}/systems/${id}`, { method: 'DELETE' });
-    if (String(state.selectedSystemId) === String(id)) state.selectedSystemId = null;
-    await loadProjectSystems(projectId);
+    removeProjectSystem(projectId, id);
+    if (String(state.selectedSystemId) === String(id)) selectFallbackProjectSystem(id);
     renderProjects();
-    await loadEntries();
+    renderHeader();
+    renderEntries();
     toast('Đã xóa hệ thống');
   } catch (error) {
     toast(error.message);
@@ -1781,17 +1829,19 @@ async function saveEntry(event) {
   if (data.credentials[0]?.password !== undefined) data.password = data.credentials[0].password;
   if (!data.password && id) delete data.password;
   try {
-    await api(id ? `/api/entries/${id}` : '/api/entries', {
+    const savedEntry = await api(id ? `/api/entries/${id}` : '/api/entries', {
       method: id ? 'PATCH' : 'POST',
       body: JSON.stringify(data)
     });
+    if (!upsertEntry(savedEntry)) await refreshEntriesForSelectedProject();
   } catch (error) {
     toast(error.message);
     return;
   }
   $('#entryDialog').close();
   toast('Đã lưu account/link');
-  await loadEntries();
+  renderHeader();
+  renderEntries();
 }
 
 function clearRevealCache() {
@@ -1890,8 +1940,12 @@ async function deleteEntry(id) {
   if (!entry?.permissions?.canDelete) return toast('Bạn không có quyền xóa account này');
   if (!confirm('Xóa mục này?')) return;
   await api(`/api/entries/${id}`, { method: 'DELETE' });
+  state.entries = state.entries.filter(item => String(item.id) !== String(id));
+  state.selectedEntryIds.delete(String(id));
+  if (String(state.selectedEntryId) === String(id)) state.selectedEntryId = null;
   toast('Đã xóa');
-  await loadEntries();
+  renderHeader();
+  renderEntries();
 }
 
 async function deleteSelectedEntries() {

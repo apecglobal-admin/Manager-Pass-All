@@ -26,6 +26,10 @@ test('desktop auto update is configured for public GitHub releases', () => {
   assert.match(main, /downloadUpdate/);
   assert.match(main, /openExternal/);
   assert.match(main, /quitAndInstall/);
+  assert.match(main, /function loadDesktopEnv/);
+  assert.match(main, /desktopTargetUrl/);
+  assert.match(main, /shell\.openExternal\(desktopTargetUrl\)/);
+  assert.match(main, /app\.quit\(\)/);
   assert.equal(existsSync(workflowPath), true);
   const workflow = readFileSync(workflowPath, 'utf8');
   assert.match(workflow, /npm run publish:win/);

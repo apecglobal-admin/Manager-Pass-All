@@ -8,6 +8,8 @@ let appServer;
 const desktopPort = process.env.PORT || '39110';
 let logFile = path.join(process.env.APPDATA || process.cwd(), 'ApecGlobal Manager', 'desktop-main.log');
 
+loadDesktopEnv();
+
 function log(message, error) {
   const line = `[${new Date().toISOString()}] ${message}${error ? `\n${error.stack || error.message || error}` : ''}\n`;
   console.log(line.trimEnd());
@@ -36,6 +38,28 @@ if (typeof electron === 'string') {
 }
 
 const { app, BrowserWindow, dialog, shell } = electron;
+const desktopTargetUrl = process.env.APECGLOBAL_APP_URL || '';
+
+function loadDesktopEnv() {
+  const envPath = path.join(__dirname, 'public.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const index = trimmed.indexOf('=');
+    if (index === -1) continue;
+    const key = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, '');
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+async function openExternalDesktopUrl() {
+  if (!app.isPackaged || !desktopTargetUrl) return false;
+  await shell.openExternal(desktopTargetUrl);
+  app.quit();
+  return true;
+}
 
 function createWindow() {
   const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -53,11 +77,10 @@ function createWindow() {
     }
   });
 
-  win.loadURL(process.env.APECGLOBAL_APP_URL || `http://localhost:${desktopPort}`);
+  win.loadURL(`http://localhost:${desktopPort}`);
 }
 
 async function startLocalServer() {
-  if (process.env.APECGLOBAL_APP_URL) return;
   const serverPath = path.join(__dirname, '..', 'src', 'server.js');
   process.env.PORT = desktopPort;
   process.env.DATA_DIR = process.env.DATA_DIR || path.join(process.env.APPDATA || app.getPath('appData'), 'apecglobal-manager');
@@ -149,18 +172,22 @@ function getLatestReleaseUrl() {
 }
 
 app.whenReady().then(() => {
-  startLocalServer()
-    .then(() => {
-      createWindow();
-      configureAutoUpdater();
+  openExternalDesktopUrl()
+    .then(opened => {
+      if (opened) return;
+      return startLocalServer()
+        .then(() => {
+          createWindow();
+          configureAutoUpdater();
+        });
     })
     .catch(error => {
-      log('Failed to start desktop server', error);
+      log('Failed to start desktop app', error);
       app.quit();
     });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!desktopTargetUrl && BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 

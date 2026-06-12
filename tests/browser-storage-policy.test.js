@@ -515,6 +515,24 @@ test('project system dialog only edits one system and closes after save', () => 
   assert.doesNotMatch(saveProjectSystem, /renderProjectSystemManager\(\)/);
 });
 
+test('project system delete is blocked locally when accounts use it and selects a fallback system', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const deleteProjectSystem = app.match(/async function deleteProjectSystem\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const saveProjectSystem = app.match(/async function saveProjectSystem\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const deleteEntry = app.match(/async function deleteEntry\(id\) \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(app, /function systemEntries\(systemId, rows = state\.entries\)/);
+  assert.match(app, /function selectFallbackProjectSystem\(removedSystemId\)/);
+  assert.match(deleteProjectSystem, /systemEntries\(id\)\.length/);
+  assert.match(deleteProjectSystem, /Xóa hoặc chuyển account khỏi hệ thống trước/);
+  assert.match(deleteProjectSystem, /selectFallbackProjectSystem\(id\)/);
+  assert.doesNotMatch(deleteProjectSystem, /await loadEntries\(\)/);
+  assert.doesNotMatch(saveProjectSystem, /await loadEntries\(\)/);
+  assert.doesNotMatch(deleteEntry, /await loadEntries\(\)/);
+  assert.match(saveProjectSystem, /upsertProjectSystem\(projectId, savedSystem\)/);
+  assert.match(deleteEntry, /state\.entries = state\.entries\.filter/);
+});
+
 test('new accounts are created from the active project system', () => {
   const app = readFileSync('public/app.js', 'utf8');
   const canCreateEntry = app.match(/function canCreateEntry\(\) \{[\s\S]+?\n\}/)?.[0] || '';
