@@ -1171,7 +1171,33 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 .system-type-control button { height: 40px; padding: 0 12px; white-space: nowrap; }
 .credential-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .credential-rows { display: grid; gap: 10px; }
-.credential-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(160px, 1fr) minmax(160px, 1fr) 36px; gap: 10px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); }
+.credential-row { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); }
+.credential-box-link-row { display: grid; grid-template-columns: minmax(130px, .45fr) minmax(0, 1fr) 36px; gap: 10px; align-items: end; }
+.credential-account-rows { display: grid; gap: 10px; }
+.credential-box-user-row { display: grid; grid-template-columns: minmax(130px, .75fr) minmax(0, 1fr) minmax(0, 1fr) 36px; gap: 10px; align-items: end; }
+.credential-add-account { justify-self: start; }
+.credential-remove-account { width: 36px; height: 40px; padding: 0; }
+.password-input-wrap {
+  position: relative;
+  display: block;
+}
+.password-input-wrap input {
+  padding-right: 44px;
+}
+.password-eye-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--text2);
+  transform: translateY(-50%);
+}
+.password-eye-btn.active {
+  color: var(--accent);
+}
 .credential-remove { width: 36px; height: 40px; padding: 0; }
 .credential-detail-list { gap: 12px; }
 .credential-detail-item { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
@@ -1256,9 +1282,27 @@ dialog::backdrop { background: var(--backdrop-bg); backdrop-filter: blur(8px); }
 }
 .credential-fields-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 0 12px 10px;
+}
+.credential-detail-user-row {
+  display: grid;
+  gap: 12px;
+}
+.credential-account-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+}
+.credential-department-subtitle {
+  grid-column: 1 / -1;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 800;
+}
+.credential-link-field {
+  min-width: 0;
 }
 .credential-field-group {
   display: flex;

@@ -333,6 +333,8 @@ test('revealed passwords show a 20 second countdown before masking again', () =>
   const app = readFileSync('public/app.js', 'utf8');
   const revealPassword = app.match(/async function revealPassword\(id, credentialId = ''\) \{[\s\S]+?\n\}/)?.[0] || '';
   const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialAccountDetailHtml = app.match(/function credentialAccountDetailHtml\(entry, credential, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialDetailSurface = `${credentialDetailRows}\n${credentialAccountDetailHtml}`;
 
   assert.match(app, /const PASSWORD_REVEAL_DURATION_MS = 20_000/);
   assert.match(app, /function setRevealedPassword\(cacheKey, password\)/);
@@ -340,19 +342,19 @@ test('revealed passwords show a 20 second countdown before masking again', () =>
   assert.match(app, /setInterval\(tick, 1000\)/);
   assert.match(app, /state\.revealCache\.delete\(cacheKey\)/);
   assert.match(revealPassword, /setRevealedPassword\(credentialId \? `\$\{id\}:\$\{credentialId\}` : id, result\.password\)/);
-  assert.match(credentialDetailRows, /data-reveal-countdown/);
-  assert.match(credentialDetailRows, /\$\{revealSecondsRemaining\(revealState\)\}s/);
-  assert.doesNotMatch(credentialDetailRows, /Ẩn sau/);
-  assert.match(credentialDetailRows, /const revealAction = revealState/);
-  assert.match(credentialDetailRows, /\? `<span class="reveal-countdown reveal-countdown-compact"/);
-  assert.match(credentialDetailRows, /: `<button class="icon-btn-only" data-reveal=/);
-  assert.doesNotMatch(credentialDetailRows, /<strong class="password-text">\$\{escapeHtml\(password\)\}<\/strong>\s*\$\{revealAction\}/);
-  assert.doesNotMatch(credentialDetailRows, /Nhạy cảm|Nháº¡y cáº£m/);
-  assert.match(credentialDetailRows, /class="credential-fields-row"/);
-  assert.match(credentialDetailRows, /class="credential-field-actions"/);
-  assert.match(credentialDetailRows, /title="Xem mật khẩu"/);
-  assert.match(credentialDetailRows, /title="Copy mật khẩu"/);
-  assert.match(credentialDetailRows, /title="Copy username"/);
+  assert.match(credentialDetailSurface, /data-reveal-countdown/);
+  assert.match(credentialDetailSurface, /\$\{revealSecondsRemaining\(revealState\)\}s/);
+  assert.doesNotMatch(credentialDetailSurface, /Ẩn sau/);
+  assert.match(credentialDetailSurface, /const revealAction = revealState/);
+  assert.match(credentialDetailSurface, /\? `<span class="reveal-countdown reveal-countdown-compact"/);
+  assert.match(credentialDetailSurface, /: `<button class="icon-btn-only" data-reveal=/);
+  assert.doesNotMatch(credentialDetailSurface, /<strong class="password-text">\$\{escapeHtml\(password\)\}<\/strong>\s*\$\{revealAction\}/);
+  assert.doesNotMatch(credentialDetailSurface, /Nhạy cảm|Nháº¡y cáº£m/);
+  assert.match(credentialDetailSurface, /class="credential-fields-row"/);
+  assert.match(credentialDetailSurface, /class="credential-field-actions"/);
+  assert.match(credentialDetailSurface, /title="Xem mật khẩu"/);
+  assert.match(credentialDetailSurface, /title="Copy mật khẩu"/);
+  assert.match(credentialDetailSurface, /title="Copy username"/);
 });
 
 test('accounts stay hidden while systems remain selectable', () => {
@@ -385,10 +387,10 @@ test('entry type mapping stays internal while system management remains visible'
 
   assert.doesNotMatch(html, /id="addEntryTypeBtn"/);
   assert.doesNotMatch(html, /id="typeFilters"/);
-  assert.doesNotMatch(html, /id="entryTypeSelect" hidden/);
-  assert.match(html, /id="entryTypeSelect"/);
+  assert.doesNotMatch(html, /id="entryTypeSelect"/);
+  assert.match(html, /name="typeId" type="hidden"/);
   assert.match(html, /id="projectSystemDialog"/);
-  assert.match(html, /id="manageEntryTypesBtn"/);
+  assert.doesNotMatch(html, /id="manageEntryTypesBtn"/);
   assert.doesNotMatch(html, /id="projectSystemTypeSelect"/);
   assert.doesNotMatch(html, /Loại hệ thống|Loáº¡i há»‡ thá»‘ng/);
   assert.match(html, /id="entryTypeDialog"/);
@@ -430,10 +432,10 @@ test('system-based account flow treats account type as metadata', () => {
   const entryTypeOptionsForEntry = app.match(/function entryTypeOptionsForEntry\(entry = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="projectSystemTypeSelect"/);
-  assert.match(html, /id="manageEntryTypesBtn"/);
+  assert.doesNotMatch(entryDialog, /id="manageEntryTypesBtn"/);
   assert.doesNotMatch(html, /name="customType"/);
   assert.match(html, /<input name="systemId" id="entrySystemSelect" type="hidden">/);
-  assert.match(html, /<select name="typeId" id="entryTypeSelect"><\/select>/);
+  assert.match(html, /<input name="typeId" type="hidden">/);
   assert.match(entryTypeOptionsForEntry, /state\.projectSystems\.length\) return state\.entryTypes/);
   assert.doesNotMatch(app, /syncEntryTypeWithSystem|entryTypeIdForSystem|system\.type|matchingType/);
   assert.doesNotMatch(app, /entrySystemSelect'\)\?\.addEventListener\('change'/);
@@ -458,6 +460,8 @@ test('account form manages department-scoped credentials', () => {
   const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
   const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialAccountDetailHtml = app.match(/function credentialAccountDetailHtml\(entry, credential, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialDetailSurface = `${credentialDetailRows}\n${credentialAccountDetailHtml}`;
   const saveEntry = app.match(/async function saveEntry\(event\) \{[\s\S]+?\n\}/)?.[0] || '';
 
   assert.match(entryDialog, /id="addCredentialBtn"/);
@@ -469,18 +473,70 @@ test('account form manages department-scoped credentials', () => {
   assert.match(saveEntry, /data\.credentials = collectEntryCredentials\(\)/);
   assert.match(renderDetail, /credentialDetailRows\(entry/);
   assert.match(credentialDetailRows, /entry\.credentials/);
-  assert.match(credentialDetailRows, /credential-department-title/);
-  assert.match(credentialDetailRows, /credentialDepartmentName\(credential\)/);
-  assert.doesNotMatch(credentialDetailRows, /departmentName\(credential\.departmentId\) \|\| 'Phòng ban'/);
-  assert.match(credentialDetailRows, /<small>Username<\/small>/);
-  assert.match(credentialDetailRows, /<small>Password<\/small>/);
-  assert.match(credentialDetailRows, /credential-fields-row/);
-  assert.match(credentialDetailRows, /icon-btn-only/);
-  assert.doesNotMatch(credentialDetailRows, /<small>\$\{escapeHtml\(departmentName\(credential\.departmentId\)/);
+  assert.match(credentialDetailSurface, /credential-department-title/);
+  assert.match(credentialDetailSurface, /credentialDepartmentName\(credential\)/);
+  assert.doesNotMatch(credentialDetailSurface, /departmentName\(credential\.departmentId\) \|\| 'Phòng ban'/);
+  assert.match(credentialDetailSurface, /<small>Username<\/small>/);
+  assert.match(credentialDetailSurface, /<small>Password<\/small>/);
+  assert.match(credentialDetailSurface, /credential-fields-row/);
+  assert.match(credentialDetailSurface, /icon-btn-only/);
+  assert.doesNotMatch(credentialDetailSurface, /<small>\$\{escapeHtml\(departmentName\(credential\.departmentId\)/);
   assert.match(css, /\.credential-department-title[\s\S]+font-size:\s*15px/);
   assert.match(css, /\.credential-department-title[\s\S]+font-weight:\s*900/);
-  assert.match(css, /\.credential-fields-row[\s\S]+grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.credential-fields-row[\s\S]+grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.credential-detail-user-row[\s\S]+grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
   assert.match(app, /\/api\/entries\/\$\{entryId\}\/credentials\/\$\{credentialId\}\/reveal-password/);
+});
+
+test('account form manages link credential boxes and hides empty rows', () => {
+  const app = readFileSync('public/app.js', 'utf8');
+  const html = readFileSync('public/index.html', 'utf8');
+  const css = readFileSync('public/styles.css', 'utf8');
+  const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
+  const credentialRowHtml = app.match(/function credentialRowHtml\(group = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const collectEntryCredentials = app.match(/function collectEntryCredentials\(\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const passwordInputWrapCss = css.match(/\.password-input-wrap \{[\s\S]+?\n\}/)?.[0] || '';
+  const passwordInputCss = css.match(/\.password-input-wrap input \{[\s\S]+?\n\}/)?.[0] || '';
+  const passwordEyeCss = css.match(/\.password-eye-btn \{[\s\S]+?\n\}/)?.[0] || '';
+
+  assert.match(entryDialog, /Mỗi box một link/);
+  assert.doesNotMatch(entryDialog, /entryTypeSelect/);
+  assert.match(credentialRowHtml, /credential-link-box/);
+  assert.match(credentialRowHtml, /data-credential-link-type/);
+  assert.match(credentialRowHtml, /credential-box-link-row/);
+  assert.match(credentialRowHtml, /credential-account-rows/);
+  assert.match(credentialRowHtml, /data-add-credential-account/);
+  assert.match(credentialRowHtml, /\+ Thêm user/);
+  assert.doesNotMatch(credentialRowHtml, /\+ Thêm account/);
+  assert.match(app, /function credentialAccountRowHtml/);
+  assert.match(app, /data-toggle-credential-password/);
+  assert.match(app, /function toggleCredentialPasswordVisibility/);
+  assert.match(app, /input\.type = input\.type === 'password' \? 'text' : 'password'/);
+  assert.match(passwordInputWrapCss, /position:\s*relative/);
+  assert.match(passwordInputCss, /padding-right:\s*44px/);
+  assert.match(passwordEyeCss, /position:\s*absolute/);
+  assert.doesNotMatch(passwordInputWrapCss, /grid-template-columns/);
+  assert.match(app, /credentialRows'\)\?\.addEventListener\('click', handleCredentialRowsClick/);
+  assert.match(app, /function handleCredentialRowsClick\(event\)/);
+  assert.doesNotMatch(app, /querySelectorAll\('\[data-add-credential-account\]'\)\.forEach/);
+  assert.match(credentialRowHtml, /data-credential-url/);
+  assert.match(collectEntryCredentials, /document\.querySelectorAll\('#credentialRows \.credential-link-box'\)/);
+  assert.match(collectEntryCredentials, /box\.querySelectorAll\('\[data-credential-account-row\]'\)/);
+  assert.match(collectEntryCredentials, /const linkType = box\.querySelector\('\[data-credential-link-type\]'\)/);
+  assert.match(collectEntryCredentials, /linkType,/);
+  assert.match(collectEntryCredentials, /url = normalizeUrl\(box\.querySelector\('\[data-credential-url\]'\)/);
+  assert.match(collectEntryCredentials, /\.filter\(credential => credential\.url \|\| credential\.username \|\| credential\.password \|\| credential\.id\)/);
+  assert.match(credentialDetailRows, /group\.linkType/);
+  assert.match(app, /const linkType = credential\.linkType/);
+  assert.match(credentialDetailRows, /group\.url/);
+  assert.match(app, /const url = credential\.url/);
+  assert.match(credentialDetailRows, /groupCredentialsByLink\(entry/);
+  assert.match(credentialDetailRows, /data-open-credential-url/);
+  assert.match(credentialDetailRows, /credential-detail-link-row/);
+  assert.match(credentialDetailRows, /credential-detail-user-row/);
+  assert.doesNotMatch(renderDetail, /<small>Trang web<\/small>/);
 });
 
 test('project logo is selected from an image file and stored as form data url', () => {

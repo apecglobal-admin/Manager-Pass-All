@@ -317,6 +317,8 @@ export function createRouter(baseRepos, options = {}) {
         id: credential.id,
         entryId: credential.entryId || entry.id,
         departmentId: credential.departmentId || null,
+        linkType: credential.linkType || 'Account',
+        url: permission.canViewUrl ? (credential.url || entry.url || '') : '',
         username: permission.canViewUsername ? credential.username : '',
         passwordMasked: true,
         sortOrder: credential.sortOrder || 0
@@ -364,6 +366,8 @@ export function createRouter(baseRepos, options = {}) {
         id: credential.id,
         entryId: credential.entryId || entry.id,
         departmentId: credential.departmentId || null,
+        linkType: credential.linkType || 'Account',
+        url: credential.url || entry.url || '',
         username: credential.username || '',
         passwordMasked: true,
         sortOrder: credential.sortOrder || 0

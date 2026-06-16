@@ -406,6 +406,8 @@ test('entry credentials are stored as department-scoped encrypted rows', async (
     name: 'Owner Account',
     credentials: [{
       departmentId: 'department-sales',
+      linkType: 'CMS',
+      url: 'https://cms.example',
       username: 'sales-user',
       password: 'sales-pass'
     }]
@@ -413,10 +415,100 @@ test('entry credentials are stored as department-scoped encrypted rows', async (
 
   assert.equal(entry.credentials.length, 1);
   assert.equal(entry.credentials[0].departmentId, 'department-sales');
+  assert.equal(entry.credentials[0].linkType, 'CMS');
+  assert.equal(entry.credentials[0].url, 'https://cms.example');
   assert.equal(entry.credentials[0].username, 'sales-user');
+  assert.equal(rows.entry_credentials[0].link_type, 'CMS');
+  assert.equal(rows.entry_credentials[0].url, 'https://cms.example');
   assert.equal(rows.entry_credentials[0].username, 'sales-user');
   assert.notEqual(rows.entry_credentials[0].password_cipher, 'sales-pass');
   assert.equal(await repos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'sales-pass');
+});
+
+test('reveals credential passwords encrypted with the legacy default app secret', async () => {
+  const rows = createRows();
+  rows.vaults.push({ id: 'vault-owner', owner_id: 'auth-owner' });
+  rows.projects.push({ id: 'project-owner', vault_id: 'vault-owner', name: 'Owner Project' });
+  rows.departments.push({ id: 'department-tech', name: 'Tech' });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 10)
+  });
+
+  const entry = await repos.entries.create({
+    projectId: 'project-owner',
+    type: 'Admin',
+    name: 'Legacy Account',
+    credentials: [{
+      departmentId: 'department-tech',
+      username: 'legacy-user',
+      password: 'new-secret'
+    }]
+  });
+  rows.entry_credentials[0].password_cipher = JSON.parse(encryptText(
+    'legacy-secret',
+    Buffer.from('apecglobal-manager-local-development-secret'.padEnd(32, '0').slice(0, 32))
+  ));
+
+  assert.equal(await repos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'legacy-secret');
+});
+
+test('reveals credential passwords encrypted with the raw legacy default app secret', async () => {
+  const rows = createRows();
+  rows.vaults.push({ id: 'vault-owner', owner_id: 'auth-owner' });
+  rows.projects.push({ id: 'project-owner', vault_id: 'vault-owner', name: 'Owner Project' });
+  rows.departments.push({ id: 'department-tech', name: 'Tech' });
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 11)
+  });
+
+  const entry = await repos.entries.create({
+    projectId: 'project-owner',
+    type: 'Admin',
+    name: 'Raw Legacy Account',
+    credentials: [{
+      departmentId: 'department-tech',
+      username: 'raw-legacy-user',
+      password: 'new-secret'
+    }]
+  });
+  rows.entry_credentials[0].password_cipher = JSON.parse(encryptText(
+    'raw-legacy-secret',
+    'apecglobal-manager-local-development-secret'
+  ));
+
+  assert.equal(await repos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'raw-legacy-secret');
+});
+
+test('password credentials are shared across app instances with different app secrets', async () => {
+  const rows = createRows();
+  rows.vaults.push({ id: 'vault-owner', owner_id: 'auth-owner' });
+  rows.projects.push({ id: 'project-owner', vault_id: 'vault-owner', name: 'Owner Project' });
+  rows.departments.push({ id: 'department-tech', name: 'Tech' });
+  const creatorRepos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 21)
+  });
+  const viewerRepos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 22)
+  });
+
+  const entry = await creatorRepos.entries.create({
+    projectId: 'project-owner',
+    type: 'Admin',
+    name: 'Shared Account',
+    password: 'primary-shared-pass',
+    credentials: [{
+      departmentId: 'department-tech',
+      username: 'shared-user',
+      password: 'credential-shared-pass'
+    }]
+  });
+
+  assert.equal(await viewerRepos.entries.revealPassword(entry.id), 'primary-shared-pass');
+  assert.equal(await viewerRepos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'credential-shared-pass');
 });
 
 function createRows() {

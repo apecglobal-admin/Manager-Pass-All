@@ -59,6 +59,19 @@ test('Supabase entry credentials migration stores department-scoped credentials'
   assert.match(sql, /entry credentials admin access/i);
 });
 
+test('Supabase entry credential link fields migration only alters the existing credentials table', () => {
+  const sql = readFileSync('sql/014_entry_credential_link_fields.sql', 'utf8');
+
+  assert.match(sql, /to_regclass\('public\.entries'\)/i);
+  assert.match(sql, /create table if not exists public\.entry_credentials/i);
+  assert.match(sql, /add column if not exists link_type text not null default 'Account'/i);
+  assert.match(sql, /add column if not exists url text not null default ''/i);
+  assert.match(sql, /references public\.entries/i);
+  assert.match(sql, /to_regclass\('public\.app_users'\)/i);
+  assert.match(sql, /create policy "entry credentials admin access"/i);
+  assert.doesNotMatch(sql, /public\.entry_credentials does not exist/i);
+});
+
 test('Supabase user departments migration stores multiple departments per user', () => {
   const sql = readFileSync('sql/012_user_departments.sql', 'utf8');
 

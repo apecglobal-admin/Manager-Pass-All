@@ -212,12 +212,12 @@
         <div class="form-section"><div class="section-label">THÔNG TIN</div>
           <label><span class="label-text">Tên</span><input name="name" required placeholder="Admin Portal"></label>
           <input name="systemId" id="entrySystemSelect" type="hidden">
-          <label><span class="label-text">Loại account</span><span class="system-type-control"><select name="typeId" id="entryTypeSelect"></select><button id="manageEntryTypesBtn" class="btn-outline" type="button">+ Loại</button></span></label>
+          <input name="typeId" type="hidden">
           <label><span class="label-text">Môi trường</span><select name="environment"><option>Production</option><option>Staging</option><option>Development</option><option>Testing</option><option>Other</option></select></label>
         </div>
         <div class="form-section"><div class="section-label">TRUY CẬP</div>
-          <label><span class="label-text">URL</span><input name="url" placeholder="https://"></label>
-          <div class="credential-section-head"><span class="label-text">User theo phòng ban</span><button id="addCredentialBtn" type="button" class="btn-outline">+ Thêm user</button></div>
+          <input name="url" type="hidden">
+          <div class="credential-section-head"><span class="label-text">Mỗi box một link</span><button id="addCredentialBtn" type="button" class="btn-outline">+ Thêm link</button></div>
           <div id="credentialRows" class="credential-rows"></div>
         </div>
         <div class="form-section compact-section">

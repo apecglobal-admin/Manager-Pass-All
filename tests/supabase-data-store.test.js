@@ -246,6 +246,45 @@ test('Supabase data store updates delegated entry by id without resolving a pers
   assert.deepEqual(calls, [['update', 'entries']]);
 });
 
+test('Supabase data store shares entry passwords across app instances with different app secrets', async () => {
+  const calls = [];
+  const rows = {
+    vaults: [{ id: 'vault-user', owner_id: 'auth-user-1', name: 'Personal' }],
+    projects: [],
+    entries: []
+  };
+  const supabase = createFakeSupabase({
+    calls,
+    rows,
+    users: [{ id: 'auth-user-1', email: 'member@example.com' }]
+  });
+  const creatorStore = createSupabaseDataStore({
+    supabase,
+    encryptionKey: Buffer.alloc(32, 31)
+  });
+  const viewerStore = createSupabaseDataStore({
+    supabase,
+    encryptionKey: Buffer.alloc(32, 32)
+  });
+
+  const created = await creatorStore.entries.create({
+    projectId: 'project-shared',
+    type: 'Web',
+    name: 'Shared Entry Password',
+    environment: 'Production',
+    url: 'https://shared.example',
+    username: 'shared-user',
+    password: 'shared-password',
+    notes: '',
+    tags: [],
+    status: 'Active'
+  });
+
+  const password = await viewerStore.entries.revealPassword(created.id);
+
+  assert.equal(password, 'shared-password');
+});
+
 test('Supabase data store deletes delegated entry by id without resolving a personal vault', async () => {
   const calls = [];
   const rows = {

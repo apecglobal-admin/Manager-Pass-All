@@ -73,7 +73,6 @@ function bindEvents() {
   $('#mixAccent2Color')?.addEventListener('input', event => updateMixThemeColor('accent2', event.target.value));
   $('#newProjectBtn').addEventListener('click', () => openProjectDialog());
   $('#projectSystemForm')?.addEventListener('submit', saveProjectSystem);
-  $('#manageEntryTypesBtn')?.addEventListener('click', openEntryTypeDialog);
   $('#newEntryBtn').addEventListener('click', () => openEntryDialog());
   $('#toggleEntryDeleteModeBtn')?.addEventListener('click', toggleEntryDeleteMode);
   $('#deleteSelectedEntriesBtn')?.addEventListener('click', deleteSelectedEntries);
@@ -85,6 +84,7 @@ function bindEvents() {
   $('#memberPermissionForm')?.addEventListener('submit', saveMemberPermissionDraft);
   $('#entryForm').addEventListener('submit', saveEntry);
   $('#addCredentialBtn')?.addEventListener('click', () => addEntryCredentialRow());
+  $('#credentialRows')?.addEventListener('click', handleCredentialRowsClick);
   $('#entryTypeForm')?.addEventListener('submit', saveEntryType);
   $('#resetEntryTypeBtn')?.addEventListener('click', resetEntryTypeForm);
   $('#userForm').addEventListener('submit', saveUser);
@@ -1006,7 +1006,9 @@ function renderTypeFilters() {
 }
 
 function fillEntryTypes(types = state.entryTypes) {
-  $('#entryTypeSelect').innerHTML = types.map(type => `<option value="${type.id}">${escapeHtml(type.name)}</option>`).join('');
+  const select = $('#entryTypeSelect');
+  if (!select) return;
+  select.innerHTML = types.map(type => `<option value="${type.id}">${escapeHtml(type.name)}</option>`).join('');
 }
 
 function fillEntrySystems(systems = state.projectSystems) {
@@ -1235,7 +1237,7 @@ function entryListSubtitle(entry) {
 
 function bindRowActions() {
   document.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', event => {
-    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-select-entry], .item-menu-wrap')) return;
+    if (event.target.closest('[data-edit], [data-delete], [data-copy], [data-reveal], [data-copy-pass], [data-open-credential-url], [data-select-entry], .item-menu-wrap')) return;
     const entry = state.entries.find(item => String(item.id) === String(button.dataset.select));
     state.selectedSystemId = entry?.systemId || entry?.projectSystemId || state.selectedSystemId;
     state.selectedEntryId = button.dataset.select;
@@ -1243,6 +1245,7 @@ function bindRowActions() {
     renderHeader();
   }));
   document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(button.dataset.copy)));
+  document.querySelectorAll('[data-open-credential-url]').forEach(button => button.addEventListener('click', () => openCredentialUrl(button.dataset.openCredentialUrl)));
   document.querySelectorAll('[data-reveal]').forEach(button => button.addEventListener('click', () => revealPassword(button.dataset.reveal, button.dataset.credentialReveal || '')));
   document.querySelectorAll('[data-copy-pass]').forEach(button => button.addEventListener('click', () => copyPassword(button.dataset.copyPass, button.dataset.credentialCopy || '')));
   document.querySelectorAll('#detailPanel .item-more-btn').forEach(button => button.addEventListener('click', event => {
@@ -1316,18 +1319,6 @@ function renderDetail(entry) {
 
     <section class="secret-card credential-detail-list">
       ${credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword })}
-    </section>
-
-    <section class="secret-card single">
-      <div class="secret-row">
-        <span class="secret-icon">${svgIcon('link')}</span>
-        <div>
-          <small>Trang web</small>
-          ${canViewUrl
-            ? (entry.url ? `<a class="detail-link" href="${escapeAttr(entry.url)}" target="_blank" rel="noreferrer">${escapeHtml(entry.url)}</a>` : '<strong>Chưa có URL</strong>')
-            : '<strong>Bị giới hạn</strong>'}
-        </div>
-      </div>
     </section>
 
     <section class="meta-card">
@@ -1688,11 +1679,24 @@ function defaultEntryCredentials(entry = {}) {
     return [{
       id: '',
       departmentId: currentCredentialDepartmentId(),
+      linkType: accountLinkType(entry),
+      url: entry.url || '',
       username: entry.username || '',
       password: ''
     }];
   }
-  return [{ id: '', departmentId: currentCredentialDepartmentId(), username: '', password: '' }];
+  return [{ id: '', departmentId: currentCredentialDepartmentId(), linkType: accountLinkType(entry), url: '', username: '', password: '' }];
+}
+
+function accountLinkType(entry = selectedEntryForForm()) {
+  const typeId = entry?.typeId || entry?.entryTypeId || $('#entryForm')?.typeId?.value || firstCreatableEntryTypeId();
+  const type = state.entryTypes.find(item => String(item.id) === String(typeId));
+  return type?.name || entry?.type || 'Account';
+}
+
+function selectedEntryForForm() {
+  const id = $('#entryForm')?.id?.value;
+  return state.entries.find(entry => String(entry.id) === String(id)) || {};
 }
 
 function currentCredentialDepartmentId() {
@@ -1723,65 +1727,173 @@ function credentialDepartmentName(credential = {}) {
 function renderEntryCredentials(credentials = []) {
   const rows = $('#credentialRows');
   if (!rows) return;
-  rows.innerHTML = credentials.map(credential => credentialRowHtml(credential)).join('');
-  rows.querySelectorAll('[data-remove-credential]').forEach(button => button.addEventListener('click', () => {
-    button.closest('.credential-row')?.remove();
-    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
-  }));
+  rows.innerHTML = credentialLinkGroups(credentials).map(group => credentialRowHtml(group)).join('');
 }
 
-function credentialRowHtml(credential = {}) {
-  const rowId = escapeAttr(credential.id || '');
+function credentialLinkGroups(credentials = []) {
+  const groups = [];
+  const byKey = new Map();
+  for (const credential of credentials.length ? credentials : defaultEntryCredentials()) {
+    const linkType = credential.linkType || 'Account';
+    const url = credential.url || '';
+    const key = `${linkType}\n${url}`;
+    if (!byKey.has(key)) {
+      const group = { linkType, url, accounts: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    if (credential.id || credential.username || credential.password || credential.departmentId) {
+      byKey.get(key).accounts.push(credential);
+    }
+  }
+  return groups.length ? groups : [{ linkType: 'CMS', url: '', accounts: [] }];
+}
+
+function credentialRowHtml(group = {}) {
+  const accounts = group.accounts?.length ? group.accounts : [];
   return `
-    <div class="credential-row" data-credential-id="${rowId}">
-      <label><span class="label-text">Phòng ban</span><select data-credential-department>${credentialDepartmentOptions(credential.departmentId || '')}</select></label>
-      <label><span class="label-text">Username</span><input data-credential-username value="${escapeAttr(credential.username || '')}" placeholder="email / user"></label>
-      <label><span class="label-text">Password</span><input data-credential-password type="password" placeholder="Để trống nếu không đổi"></label>
-      <button type="button" class="icon-danger credential-remove" data-remove-credential title="Xóa user">${svgIcon('trash')}</button>
+    <div class="credential-row credential-link-box">
+      <div class="credential-box-link-row">
+        <label><span class="label-text">Loại link</span><input data-credential-link-type value="${escapeAttr(group.linkType || 'CMS')}" placeholder="CMS / Web / Database"></label>
+        <label><span class="label-text">Link</span><input data-credential-url value="${escapeAttr(group.url || '')}" placeholder="https://"></label>
+        <button type="button" class="icon-danger credential-remove" data-remove-credential title="Xóa link">${svgIcon('trash')}</button>
+      </div>
+      <div class="credential-account-rows">
+        ${accounts.map(credentialAccountRowHtml).join('')}
+      </div>
+      <button type="button" class="btn-outline credential-add-account" data-add-credential-account>+ Thêm user</button>
     </div>
   `;
+}
+
+function credentialAccountRowHtml(credential = {}) {
+  return `
+    <div class="credential-box-user-row" data-credential-account-row data-credential-id="${escapeAttr(credential.id || '')}">
+      <label><span class="label-text">Phòng ban</span><select data-credential-department>${credentialDepartmentOptions(credential.departmentId || '')}</select></label>
+      <label><span class="label-text">Username</span><input data-credential-username value="${escapeAttr(credential.username || '')}" placeholder="Có thể để trống"></label>
+      <label><span class="label-text">Password</span><span class="password-input-wrap"><input data-credential-password type="password" placeholder="Có thể để trống"><button type="button" class="icon-btn-only password-eye-btn" data-toggle-credential-password title="Xem password" aria-label="Xem password">${svgIcon('eye')}</button></span></label>
+      <button type="button" class="icon-danger credential-remove-account" data-remove-credential-account title="Xóa account">${svgIcon('trash')}</button>
+    </div>
+  `;
+}
+
+function handleCredentialRowsClick(event) {
+  const rows = $('#credentialRows');
+  const removeLinkButton = event.target.closest('[data-remove-credential]');
+  if (removeLinkButton) {
+    removeLinkButton.closest('.credential-link-box')?.remove();
+    if (!rows?.querySelector('.credential-link-box')) addEntryCredentialRow();
+    return;
+  }
+
+  const addAccountButton = event.target.closest('[data-add-credential-account]');
+  if (addAccountButton) {
+    const accountRows = addAccountButton.closest('.credential-link-box')?.querySelector('.credential-account-rows');
+    accountRows?.insertAdjacentHTML('beforeend', credentialAccountRowHtml({ departmentId: currentCredentialDepartmentId() }));
+    accountRows?.lastElementChild?.querySelector('[data-credential-username]')?.focus();
+    return;
+  }
+
+  const removeAccountButton = event.target.closest('[data-remove-credential-account]');
+  if (removeAccountButton) {
+    removeAccountButton.closest('[data-credential-account-row]')?.remove();
+    return;
+  }
+
+  const togglePasswordButton = event.target.closest('[data-toggle-credential-password]');
+  if (togglePasswordButton) toggleCredentialPasswordVisibility(togglePasswordButton);
+}
+
+function toggleCredentialPasswordVisibility(button) {
+  const input = button.closest('.password-input-wrap')?.querySelector('[data-credential-password]');
+  if (!input) return;
+  input.type = input.type === 'password' ? 'text' : 'password';
+  button.classList.toggle('active', input.type === 'text');
+  button.title = input.type === 'text' ? 'Ẩn password' : 'Xem password';
+  button.setAttribute('aria-label', button.title);
 }
 
 function credentialDetailRows(entry, { canViewUsername, canRevealEntryPassword }) {
   const credentials = entry.credentials?.length
     ? entry.credentials
-    : [{ id: '', entryId: entry.id, departmentId: '', username: entry.username || '' }];
-  return credentials.map(credential => {
-    const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
-    const revealState = revealedPasswordState(credentialKey);
-    const password = revealState?.password || '************';
-    const revealAction = revealState
-      ? `<span class="reveal-countdown reveal-countdown-compact" data-reveal-countdown="${escapeAttr(credentialKey)}">${revealSecondsRemaining(revealState)}s</span>`
-      : `<button class="icon-btn-only" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}" title="Xem mật khẩu" aria-label="Xem mật khẩu">${svgIcon('eye')}</button>`;
+    : [{ id: '', entryId: entry.id, departmentId: '', linkType: 'Account', url: entry.url || '', username: entry.username || '' }];
+  return groupCredentialsByLink(entry, credentials).map(group => {
+    const credentialUrl = group.url || entry.url || '';
     return `
       <div class="credential-detail-item">
-        <div class="credential-department-title">${escapeHtml(credentialDepartmentName(credential))}</div>
+        <div class="credential-department-title">${escapeHtml(group.linkType || 'CMS')}</div>
         <div class="credential-fields-row">
-          <div class="credential-field-group">
-            <span class="credential-field-icon">${svgIcon('user')}</span>
+          <div class="credential-detail-link-row credential-field-group credential-link-field">
+            <span class="credential-field-icon">${svgIcon('link')}</span>
             <div class="credential-field-content">
-              <small>Username</small>
-              <strong class="credential-field-val">${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+              <small>Link</small>
+              <strong class="credential-field-val">${credentialUrl ? escapeHtml(credentialUrl) : 'Chưa có link'}</strong>
             </div>
             <span class="credential-field-actions">
-              ${canViewUsername && credential.username ? `<button class="icon-btn-only" data-copy="${escapeAttr(credential.username)}" title="Copy username" aria-label="Copy username">${svgIcon('copy')}</button>` : ''}
+              ${credentialUrl ? `<button class="icon-btn-only" data-open-credential-url="${escapeAttr(credentialUrl)}" title="Mở link" aria-label="Mở link">${svgIcon('external')}</button>` : ''}
             </span>
           </div>
-          <div class="credential-field-group">
-            <span class="credential-field-icon">${svgIcon('key')}</span>
-            <div class="credential-field-content">
-              <small>Password</small>
-              <strong class="credential-field-val password-text">${escapeHtml(password)}</strong>
-            </div>
-            <span class="credential-field-actions">
-              ${canRevealEntryPassword ? `${revealAction}
-              <button class="icon-btn-only" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}" title="Copy mật khẩu" aria-label="Copy mật khẩu">${svgIcon('copy')}</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
-            </span>
+          <div class="credential-detail-user-row">
+            ${group.accounts.length ? group.accounts.map(credential => credentialAccountDetailHtml(entry, credential, { canViewUsername, canRevealEntryPassword })).join('') : '<p class="form-hint">Chưa có account cho link này.</p>'}
           </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+function groupCredentialsByLink(entry, credentials = []) {
+  const groups = [];
+  const byKey = new Map();
+  for (const credential of credentials) {
+    const linkType = credential.linkType || accountLinkType(entry);
+    const url = credential.url || entry.url || '';
+    const key = `${linkType}\n${url}`;
+    if (!byKey.has(key)) {
+      const group = { linkType, url, accounts: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    if (credential.username || credential.departmentId) {
+      byKey.get(key).accounts.push(credential);
+    }
+  }
+  return groups;
+}
+
+function credentialAccountDetailHtml(entry, credential, { canViewUsername, canRevealEntryPassword }) {
+  const credentialKey = credential.id ? `${entry.id}:${credential.id}` : entry.id;
+  const revealState = revealedPasswordState(credentialKey);
+  const password = revealState?.password || '************';
+  const revealAction = revealState
+    ? `<span class="reveal-countdown reveal-countdown-compact" data-reveal-countdown="${escapeAttr(credentialKey)}">${revealSecondsRemaining(revealState)}s</span>`
+    : `<button class="icon-btn-only" data-reveal="${entry.id}" data-credential-reveal="${escapeAttr(credential.id || '')}" title="Xem mật khẩu" aria-label="Xem mật khẩu">${svgIcon('eye')}</button>`;
+  return `
+    <div class="credential-account-detail">
+      <div class="credential-department-subtitle">${escapeHtml(credentialDepartmentName(credential))}</div>
+      <div class="credential-field-group">
+        <span class="credential-field-icon">${svgIcon('user')}</span>
+        <div class="credential-field-content">
+          <small>Username</small>
+          <strong class="credential-field-val">${canViewUsername ? escapeHtml(credential.username || 'Chưa có username') : 'Bị giới hạn'}</strong>
+        </div>
+        <span class="credential-field-actions">
+          ${canViewUsername && credential.username ? `<button class="icon-btn-only" data-copy="${escapeAttr(credential.username)}" title="Copy username" aria-label="Copy username">${svgIcon('copy')}</button>` : ''}
+        </span>
+      </div>
+      <div class="credential-field-group">
+        <span class="credential-field-icon">${svgIcon('key')}</span>
+        <div class="credential-field-content">
+          <small>Password</small>
+          <strong class="credential-field-val password-text">${escapeHtml(password)}</strong>
+        </div>
+        <span class="credential-field-actions">
+          ${canRevealEntryPassword ? `${revealAction}
+          <button class="icon-btn-only" data-copy-pass="${entry.id}" data-credential-copy="${escapeAttr(credential.id || '')}" title="Copy mật khẩu" aria-label="Copy mật khẩu">${svgIcon('copy')}</button>` : '<span class="risk-badge">Bị giới hạn</span>'}
+        </span>
+      </div>
+    </div>
+  `;
 }
 
 function addEntryCredentialRow(credential = {}) {
@@ -1792,26 +1904,30 @@ function addEntryCredentialRow(credential = {}) {
     ...credential
   }));
   const row = rows.lastElementChild;
-  row?.querySelector('[data-remove-credential]')?.addEventListener('click', () => {
-    row.remove();
-    if (!rows.querySelector('.credential-row')) addEntryCredentialRow();
-  });
-  row?.querySelector('[data-credential-username]')?.focus();
+  row?.querySelector('[data-credential-url]')?.focus();
 }
 
 function collectEntryCredentials() {
-  return [...document.querySelectorAll('#credentialRows .credential-row')]
-    .map(row => {
-      const password = row.querySelector('[data-credential-password]')?.value || '';
-      const credential = {
-        id: row.dataset.credentialId || '',
-        departmentId: row.querySelector('[data-credential-department]')?.value || null,
-        username: row.querySelector('[data-credential-username]')?.value.trim() || ''
-      };
-      if (password || !credential.id) credential.password = password;
-      return credential;
+  return [...document.querySelectorAll('#credentialRows .credential-link-box')]
+    .flatMap(box => {
+      const linkType = box.querySelector('[data-credential-link-type]')?.value.trim() || 'CMS';
+      const url = normalizeUrl(box.querySelector('[data-credential-url]')?.value || '');
+      const accountRows = [...box.querySelectorAll('[data-credential-account-row]')];
+      if (!accountRows.length) return [{ id: '', departmentId: null, linkType, url, username: '', password: '' }];
+      return accountRows.map(row => {
+        const password = row.querySelector('[data-credential-password]')?.value || '';
+        const credential = {
+          id: row.dataset.credentialId || '',
+          departmentId: row.querySelector('[data-credential-department]')?.value || null,
+          linkType,
+          url,
+          username: row.querySelector('[data-credential-username]')?.value.trim() || ''
+        };
+        if (password || !credential.id) credential.password = password;
+        return credential;
+      });
     })
-    .filter(credential => credential.username || credential.password || credential.id);
+    .filter(credential => credential.url || credential.username || credential.password || credential.id);
 }
 
 async function saveEntry(event) {
@@ -1825,6 +1941,7 @@ async function saveEntry(event) {
   data.tags = data.tags.split(',').map(tag => tag.trim()).filter(Boolean);
   data.status = 'Active';
   data.credentials = collectEntryCredentials();
+  data.url = data.credentials[0]?.url || data.url || '';
   data.username = data.credentials[0]?.username || '';
   if (data.credentials[0]?.password !== undefined) data.password = data.credentials[0].password;
   if (!data.password && id) delete data.password;
@@ -1903,6 +2020,16 @@ function startRevealCountdown(cacheKey) {
   const timer = setInterval(tick, 1000);
   state.revealTimers.set(cacheKey, timer);
   tick();
+}
+
+function normalizeUrl(value = '') {
+  return String(value || '').trim();
+}
+
+function openCredentialUrl(url) {
+  const href = normalizeUrl(url);
+  if (!href) return;
+  window.open(href, '_blank', 'noopener,noreferrer');
 }
 
 async function revealPassword(id, credentialId = '') {

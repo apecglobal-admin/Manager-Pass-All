@@ -2,6 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { randomBytes } from 'node:crypto';
 import { decryptText, encryptText } from './crypto.js';
 
+const LEGACY_DEFAULT_SECRET = 'apecglobal-manager-local-development-secret';
+const LEGACY_DEFAULT_ENCRYPTION_KEY = Buffer.from(LEGACY_DEFAULT_SECRET.padEnd(32, '0').slice(0, 32));
+const LEGACY_DECRYPTION_KEYS = [LEGACY_DEFAULT_ENCRYPTION_KEY, LEGACY_DEFAULT_SECRET];
+const SHARED_PASSWORD_SECRET = 'apecglobal-manager-shared-password-key';
+const SHARED_PASSWORD_ENCRYPTION_KEY = Buffer.from(SHARED_PASSWORD_SECRET.padEnd(32, '0').slice(0, 32));
+
 export function createSupabaseDataStore({
   supabase,
   supabaseUrl,
@@ -157,7 +163,7 @@ export function createSupabaseDataStore({
             environment: input.environment || 'Production',
             url: input.url || '',
             username: input.username || '',
-            password_cipher: encryptPayload(input.password || '', encryptionKey),
+            password_cipher: encryptPasswordPayload(input.password || ''),
             secret_notes_cipher: encryptPayload(input.notes || '', encryptionKey),
             tags: input.tags || [],
             status: input.status || 'Active'
@@ -181,7 +187,7 @@ export function createSupabaseDataStore({
           updated_at: new Date().toISOString()
         };
         if (input.password !== undefined) {
-          patch.password_cipher = encryptPayload(input.password || '', encryptionKey);
+          patch.password_cipher = encryptPasswordPayload(input.password || '');
         }
         const { data, error } = await client
           .from('entries')
@@ -211,7 +217,7 @@ export function createSupabaseDataStore({
           .single();
         if (error) throw error;
         if (!data) throw new Error('Entry not found');
-        return decryptPayload(data.password_cipher, encryptionKey);
+        return decryptPasswordPayload(data.password_cipher, encryptionKey);
       }
     },
     activity: {
@@ -284,7 +290,46 @@ function encryptPayload(value, encryptionKey) {
   return JSON.parse(encryptText(value, encryptionKey));
 }
 
+function encryptPasswordPayload(value) {
+  return JSON.parse(encryptText(value || '', SHARED_PASSWORD_ENCRYPTION_KEY));
+}
+
 function decryptPayload(value, encryptionKey) {
   if (!value || !encryptionKey) return '';
-  return decryptText(JSON.stringify(value), encryptionKey);
+  return decryptPayloadWithKeys(value, [encryptionKey, ...LEGACY_DECRYPTION_KEYS]);
+}
+
+function decryptPasswordPayload(value, encryptionKey) {
+  if (!value) return '';
+  return decryptPayloadWithKeys(value, [
+    SHARED_PASSWORD_ENCRYPTION_KEY,
+    encryptionKey,
+    ...LEGACY_DECRYPTION_KEYS
+  ].filter(Boolean));
+}
+
+function decryptPayloadWithKeys(value, keys) {
+  const serialized = JSON.stringify(value);
+  let firstDecryptError = null;
+  const triedKeys = [];
+  for (const key of keys) {
+    if (triedKeys.some(triedKey => keysEqual(triedKey, key))) continue;
+    triedKeys.push(key);
+    try {
+      return decryptText(serialized, key);
+    } catch (error) {
+      if (!isDecryptAuthError(error)) throw error;
+      firstDecryptError ||= error;
+    }
+  }
+  if (firstDecryptError) throw firstDecryptError;
+  return '';
+}
+
+function isDecryptAuthError(error) {
+  return /Unsupported state or unable to authenticate data/i.test(error?.message || '');
+}
+
+function keysEqual(left, right) {
+  return Buffer.from(left).equals(Buffer.from(right));
 }

@@ -25,6 +25,9 @@ test('desktop auto update is configured for public GitHub releases', () => {
   assert.match(main, /showUpdateAvailableDialog/);
   assert.match(main, /downloadUpdate/);
   assert.match(main, /openExternal/);
+  assert.match(main, /setWindowOpenHandler/);
+  assert.match(main, /shell\.openExternal\(details\.url\)/);
+  assert.match(main, /return \{ action: 'deny' \}/);
   assert.match(main, /quitAndInstall/);
   assert.match(main, /function loadDesktopEnv/);
   assert.match(main, /desktopTargetUrl/);

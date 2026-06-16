@@ -2,6 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { decryptText, encryptText } from './crypto.js';
 import { DEFAULT_AUTO_LOCK_MINUTES } from './config.js';
 
+const LEGACY_DEFAULT_SECRET = 'apecglobal-manager-local-development-secret';
+const LEGACY_DEFAULT_ENCRYPTION_KEY = Buffer.from(LEGACY_DEFAULT_SECRET.padEnd(32, '0').slice(0, 32));
+const LEGACY_DECRYPTION_KEYS = [LEGACY_DEFAULT_ENCRYPTION_KEY, LEGACY_DEFAULT_SECRET];
+const SHARED_PASSWORD_SECRET = 'apecglobal-manager-shared-password-key';
+const SHARED_PASSWORD_ENCRYPTION_KEY = Buffer.from(SHARED_PASSWORD_SECRET.padEnd(32, '0').slice(0, 32));
+
 export const ROLE_PERMISSIONS = {
   Admin: ['users.manage'],
   Manager: ['users.manage'],
@@ -519,7 +525,7 @@ function entriesRepo(client, encryptionKey) {
           environment: input.environment || 'Production',
           url: input.url || '',
           username: input.username || '',
-          password_cipher: encryptPayload(input.password || '', encryptionKey),
+          password_cipher: encryptPasswordPayload(input.password || ''),
           secret_notes_cipher: encryptPayload(input.notes || '', encryptionKey),
           tags: input.tags || [],
           status: input.status || 'Active'
@@ -545,7 +551,7 @@ function entriesRepo(client, encryptionKey) {
         status: input.status || 'Active',
         updated_at: new Date().toISOString()
       };
-      if (input.password !== undefined) patch.password_cipher = encryptPayload(input.password || '', encryptionKey);
+      if (input.password !== undefined) patch.password_cipher = encryptPasswordPayload(input.password || '');
       const { data, error } = await client.from('entries').update(patch).eq('id', id).select().single();
       if (error) throw error;
       if (Array.isArray(input.credentials)) await syncEntryCredentials(client, id, input.credentials, encryptionKey);
@@ -560,7 +566,7 @@ function entriesRepo(client, encryptionKey) {
     },
     async revealPassword(id) {
       const row = await getEntryRow(client, id);
-      return decryptPayload(row?.password_cipher, encryptionKey);
+      return decryptPasswordPayload(row?.password_cipher, encryptionKey);
     },
     async revealPasswordForUser(id) {
       return await this.revealPassword(id);
@@ -570,7 +576,7 @@ function entriesRepo(client, encryptionKey) {
     },
     async revealCredentialPassword(entryId, credentialId) {
       const credential = await getCredentialRow(client, entryId, credentialId);
-      return decryptPayload(credential?.password_cipher, encryptionKey);
+      return decryptPasswordPayload(credential?.password_cipher, encryptionKey);
     },
     async exportForUser(_user, { includePasswords = false } = {}) {
       const { data, error } = await client.from('entries').select('*').is('deleted_at', null).order('name', { ascending: true });
@@ -831,11 +837,13 @@ async function syncEntryCredentials(client, entryId, credentials, encryptionKey)
     const payload = {
       entry_id: entryId,
       department_id: credential.departmentId || null,
+      link_type: credential.linkType || 'Account',
+      url: credential.url || '',
       username: credential.username || '',
       sort_order: index + 1,
       updated_at: new Date().toISOString()
     };
-    if (credential.password !== undefined) payload.password_cipher = encryptPayload(credential.password || '', encryptionKey);
+    if (credential.password !== undefined) payload.password_cipher = encryptPasswordPayload(credential.password || '');
 
     if (credential.id && existingIds.has(String(credential.id))) {
       const { error } = await client.from('entry_credentials').update(payload).eq('id', credential.id);
@@ -843,7 +851,7 @@ async function syncEntryCredentials(client, entryId, credentials, encryptionKey)
     } else {
       const { error } = await client.from('entry_credentials').insert({
         ...payload,
-        password_cipher: payload.password_cipher || encryptPayload('', encryptionKey)
+        password_cipher: payload.password_cipher || encryptPasswordPayload('')
       });
       if (error) throw error;
     }
@@ -1116,6 +1124,8 @@ function mapCredential(row) {
     id: row.id,
     entryId: row.entry_id,
     departmentId: row.department_id || null,
+    linkType: row.link_type || 'Account',
+    url: row.url || '',
     username: row.username || '',
     passwordMasked: true,
     sortOrder: row.sort_order || 0,
@@ -1138,7 +1148,7 @@ function mapEntryExport(row, encryptionKey, includePasswords) {
     tags: entry.tags,
     status: entry.status
   };
-  if (includePasswords) exported.password = decryptPayload(row.password_cipher, encryptionKey);
+  if (includePasswords) exported.password = decryptPasswordPayload(row.password_cipher, encryptionKey);
   return exported;
 }
 
@@ -1197,9 +1207,40 @@ function encryptPayload(value, encryptionKey) {
   return JSON.parse(encryptText(value || '', encryptionKey));
 }
 
+function encryptPasswordPayload(value) {
+  return JSON.parse(encryptText(value || '', SHARED_PASSWORD_ENCRYPTION_KEY));
+}
+
+function decryptPasswordPayload(value, encryptionKey) {
+  if (!value) return '';
+  return decryptPayloadWithKeys(value, [
+    SHARED_PASSWORD_ENCRYPTION_KEY,
+    encryptionKey,
+    ...LEGACY_DECRYPTION_KEYS
+  ].filter(Boolean));
+}
+
 function decryptPayload(value, encryptionKey) {
   if (!value || !encryptionKey) return '';
-  return decryptText(JSON.stringify(value), encryptionKey);
+  return decryptPayloadWithKeys(value, [encryptionKey, ...LEGACY_DECRYPTION_KEYS]);
+}
+
+function decryptPayloadWithKeys(value, keys) {
+  const serialized = JSON.stringify(value);
+  let firstDecryptError = null;
+  const triedKeys = [];
+  for (const key of keys) {
+    if (triedKeys.some(triedKey => keysEqual(triedKey, key))) continue;
+    triedKeys.push(key);
+    try {
+      return decryptText(serialized, key);
+    } catch (error) {
+      if (!isDecryptAuthError(error)) throw error;
+      firstDecryptError ||= error;
+    }
+  }
+  if (firstDecryptError) throw firstDecryptError;
+  return '';
 }
 
 function decryptPayloadOrEmpty(value, encryptionKey) {
@@ -1213,6 +1254,10 @@ function decryptPayloadOrEmpty(value, encryptionKey) {
 
 function isDecryptAuthError(error) {
   return /Unsupported state or unable to authenticate data/i.test(error?.message || '');
+}
+
+function keysEqual(left, right) {
+  return Buffer.from(left).equals(Buffer.from(right));
 }
 
 function normalizeEmail(value) {

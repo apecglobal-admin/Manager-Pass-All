@@ -489,6 +489,94 @@ test('project members only receive credentials for their department', async () =
   }
 });
 
+test('admin receives row-level credential links and reveals any credential password', async () => {
+  const repos = createMemoryRepos({
+    users: [{
+      id: 'user-admin',
+      username: 'admin@example.com',
+      displayName: 'Admin',
+      role: 'Admin',
+      status: 'Active',
+      permissions: ['users.manage'],
+      authUserId: 'auth-admin'
+    }],
+    entries: [{
+      id: 'entry-web',
+      projectId: 'project-1',
+      systemId: 'system-web',
+      typeId: 'type-web',
+      name: 'Website account',
+      username: 'legacy-admin',
+      url: 'https://legacy.example',
+      notes: '',
+      tags: [],
+      status: 'Active',
+      credentials: [
+        {
+          id: 'credential-cms',
+          entryId: 'entry-web',
+          departmentId: 'department-sales',
+          linkType: 'CMS',
+          url: 'https://cms.example',
+          username: 'cms-user',
+          password: 'cms-pass'
+        },
+        {
+          id: 'credential-db',
+          entryId: 'entry-web',
+          departmentId: 'department-tech',
+          linkType: 'Database',
+          url: 'postgres://db.example',
+          username: 'db-user',
+          password: 'db-pass'
+        }
+      ]
+    }]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-admin',
+      authUserId: 'auth-admin',
+      email: 'admin@example.com',
+      name: 'Admin'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'admin-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const entries = await (await fetch(`${base}/api/projects/project-1/entries`, {
+      headers: { cookie }
+    })).json();
+    assert.equal(entries.length, 1);
+    assert.deepEqual(entries[0].credentials.map(credential => ({
+      linkType: credential.linkType,
+      url: credential.url,
+      username: credential.username
+    })), [
+      { linkType: 'CMS', url: 'https://cms.example', username: 'cms-user' },
+      { linkType: 'Database', url: 'postgres://db.example', username: 'db-user' }
+    ]);
+
+    const reveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-db/reveal-password`, {
+      method: 'POST',
+      headers: { cookie }
+    });
+    assert.equal(reveal.status, 200);
+    assert.equal((await reveal.json()).password, 'db-pass');
+  } finally {
+    await app.close();
+  }
+});
+
 test('project members can list department names for credential titles', async () => {
   const repos = createMemoryRepos({
     users: [{
