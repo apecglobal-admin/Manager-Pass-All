@@ -312,18 +312,8 @@ export function createRouter(baseRepos, options = {}) {
       entryTypeId
     });
     if (!permission?.canViewEntry) return null;
-    const credentials = visibleCredentialsForUser(entry.credentials || [], user)
-      .map(credential => ({
-        id: credential.id,
-        entryId: credential.entryId || entry.id,
-        departmentId: credential.departmentId || null,
-        linkType: credential.linkType || 'Account',
-        url: permission.canViewUrl ? (credential.url || entry.url || '') : '',
-        username: permission.canViewUsername ? credential.username : '',
-        passwordMasked: true,
-        sortOrder: credential.sortOrder || 0
-      }));
-    const primaryCredential = credentials[0] || null;
+    const credentials = visibleCredentialsForPermission(entry, user, permission);
+    const primaryCredential = credentials.find(credential => credential.username) || credentials[0] || null;
     return {
       ...entry,
       systemId: entry.systemId || entry.projectSystemId || null,
@@ -351,6 +341,44 @@ export function createRouter(baseRepos, options = {}) {
     const departmentIds = userDepartmentIds(user);
     if (!departmentIds.size) return [];
     return credentials.filter(credential => departmentIds.has(String(credential.departmentId || '')));
+  }
+
+  function visibleCredentialsForPermission(entry, user, permission) {
+    if (isAdminUser(user)) {
+      return (entry.credentials || []).map(credentialPayloadForAdmin(entry));
+    }
+    const departmentIds = userDepartmentIds(user);
+    return (entry.credentials || [])
+      .map(credential => {
+        const canViewAccount = departmentIds.has(String(credential.departmentId || ''))
+          && (permission.canViewUsername || permission.canRevealPassword);
+        const canViewLink = Boolean(permission.canViewUrl);
+        if (!canViewLink && !canViewAccount) return null;
+        return {
+          id: credential.id,
+          entryId: credential.entryId || entry.id,
+          departmentId: canViewAccount ? (credential.departmentId || null) : null,
+          linkType: credential.linkType || 'Account',
+          url: canViewLink ? (credential.url || entry.url || '') : '',
+          username: canViewAccount && permission.canViewUsername ? credential.username : '',
+          passwordMasked: true,
+          sortOrder: credential.sortOrder || 0
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function credentialPayloadForAdmin(entry) {
+    return credential => ({
+      id: credential.id,
+      entryId: credential.entryId || entry.id,
+      departmentId: credential.departmentId || null,
+      linkType: credential.linkType || 'Account',
+      url: credential.url || entry.url || '',
+      username: credential.username || '',
+      passwordMasked: true,
+      sortOrder: credential.sortOrder || 0
+    });
   }
 
   function userDepartmentIds(user) {

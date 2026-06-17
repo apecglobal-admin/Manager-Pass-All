@@ -463,7 +463,8 @@ test('project members only receive credentials for their department', async () =
     })).json();
     assert.equal(entries.length, 1);
     assert.equal(entries[0].username, 'sales-user');
-    assert.deepEqual(entries[0].credentials.map(credential => credential.username), ['sales-user', 'support-user']);
+    assert.deepEqual(entries[0].credentials.map(credential => credential.username), ['sales-user', 'support-user', '']);
+    assert.deepEqual(entries[0].credentials.map(credential => credential.departmentId), ['department-sales', 'department-support', null]);
 
     const allowedReveal = await fetch(`${base}/api/entries/entry-web/credentials/credential-sales/reveal-password`, {
       method: 'POST',
@@ -484,6 +485,112 @@ test('project members only receive credentials for their department', async () =
       headers: { cookie }
     });
     assert.equal(deniedReveal.status, 403);
+  } finally {
+    await app.close();
+  }
+});
+
+test('project members can view credential links without seeing other department accounts', async () => {
+  const repos = createMemoryRepos({
+    users: [{
+      id: 'user-link',
+      username: 'link@example.com',
+      displayName: 'Link Viewer',
+      role: 'Viewer',
+      status: 'Active',
+      permissions: [],
+      authUserId: 'auth-link',
+      departmentId: 'department-sales',
+      departmentIds: ['department-sales']
+    }],
+    departments: [
+      { id: 'department-sales', name: 'Sales', sortOrder: 1 },
+      { id: 'department-tech', name: 'Tech', sortOrder: 2 }
+    ],
+    projects: [{ id: 'project-apecspace', name: 'ApecSpace', status: 'Active' }],
+    systems: [{ id: 'system-web', projectId: 'project-apecspace', name: 'Website', status: 'Active' }],
+    memberships: [{ userId: 'user-link', projectId: 'project-apecspace' }],
+    permissions: [{
+      userId: 'user-link',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      canViewEntry: true,
+      canViewUrl: true,
+      canViewUsername: false,
+      canRevealPassword: false,
+      canViewNotes: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: false
+    }],
+    entries: [{
+      id: 'entry-web',
+      projectId: 'project-apecspace',
+      systemId: 'system-web',
+      typeId: 'type-web',
+      name: 'Website account',
+      username: 'legacy-admin',
+      url: 'https://legacy.example',
+      notes: '',
+      tags: [],
+      status: 'Active',
+      credentials: [
+        {
+          id: 'credential-cms',
+          entryId: 'entry-web',
+          departmentId: 'department-tech',
+          linkType: 'CMS',
+          url: 'https://cms.example',
+          username: 'cms-user',
+          password: 'cms-pass'
+        },
+        {
+          id: 'credential-db',
+          entryId: 'entry-web',
+          departmentId: 'department-tech',
+          linkType: 'Database',
+          url: 'postgres://db.example',
+          username: 'db-user',
+          password: 'db-pass'
+        }
+      ]
+    }]
+  });
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async () => ({
+      id: 'auth-link',
+      authUserId: 'auth-link',
+      email: 'link@example.com',
+      name: 'Link Viewer'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'link-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const entries = await (await fetch(`${base}/api/projects/project-apecspace/entries`, {
+      headers: { cookie }
+    })).json();
+
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].username, '');
+    assert.deepEqual(entries[0].credentials.map(credential => ({
+      linkType: credential.linkType,
+      url: credential.url,
+      username: credential.username,
+      departmentId: credential.departmentId
+    })), [
+      { linkType: 'CMS', url: 'https://cms.example', username: '', departmentId: null },
+      { linkType: 'Database', url: 'postgres://db.example', username: '', departmentId: null }
+    ]);
   } finally {
     await app.close();
   }

@@ -495,6 +495,7 @@ test('account form manages link credential boxes and hides empty rows', () => {
   const entryDialog = html.match(/<dialog id="entryDialog">[\s\S]+?<\/dialog>/)?.[0] || '';
   const credentialRowHtml = app.match(/function credentialRowHtml\(group = \{\}\) \{[\s\S]+?\n\}/)?.[0] || '';
   const credentialDetailRows = app.match(/function credentialDetailRows\(entry, \{ canViewUsername, canRevealEntryPassword \}\) \{[\s\S]+?\n\}/)?.[0] || '';
+  const groupCredentialsByLink = app.match(/function groupCredentialsByLink\(entry, credentials = \[\]\) \{[\s\S]+?\n\}/)?.[0] || '';
   const collectEntryCredentials = app.match(/function collectEntryCredentials\(\) \{[\s\S]+?\n\}/)?.[0] || '';
   const renderDetail = app.match(/function renderDetail\(entry\) \{[\s\S]+?\n\}/)?.[0] || '';
   const passwordInputWrapCss = css.match(/\.password-input-wrap \{[\s\S]+?\n\}/)?.[0] || '';
@@ -533,6 +534,7 @@ test('account form manages link credential boxes and hides empty rows', () => {
   assert.match(credentialDetailRows, /group\.url/);
   assert.match(app, /const url = credential\.url/);
   assert.match(credentialDetailRows, /groupCredentialsByLink\(entry/);
+  assert.match(groupCredentialsByLink, /if \(credential\.username \|\| credential\.departmentId\)/);
   assert.match(credentialDetailRows, /data-open-credential-url/);
   assert.match(credentialDetailRows, /credential-detail-link-row/);
   assert.match(credentialDetailRows, /credential-detail-user-row/);
