@@ -81,3 +81,11 @@ test('Supabase user departments migration stores multiple departments per user',
   assert.match(sql, /primary key \(user_id, department_id\)/i);
   assert.match(sql, /user departments admin access/i);
 });
+
+test('Supabase detailed permissions link fields migration alters table and creates indexes', () => {
+  const sql = readFileSync('sql/015_link_permissions.sql', 'utf8');
+
+  assert.match(sql, /alter table public\.detailed_permissions/i);
+  assert.match(sql, /add column if not exists credential_id uuid references public\.entry_credentials/i);
+  assert.match(sql, /detailed_permissions_user_project_system_credential_idx/i);
+});

@@ -1861,3 +1861,102 @@ function createMemoryRepos(overrides = {}) {
   };
   return repos;
 }
+
+test('project member accesses entry with no link-level permissions gets empty primary fields and is blocked from reveal-password', async () => {
+  const repos = createMemoryRepos({
+    users: [
+      {
+        id: 'user-member',
+        username: 'member@example.com',
+        displayName: 'Member',
+        role: 'Viewer',
+        status: 'Active',
+        permissions: [],
+        departmentId: 'dept-1',
+        departmentIds: ['dept-1'],
+        createdAt: '2026-05-27T00:00:00.000Z'
+      }
+    ],
+    projects: [
+      { id: 'project-1', name: 'Project 1', status: 'Active', sortOrder: 1 }
+    ],
+    systems: [
+      { id: 'system-1', projectId: 'project-1', name: 'System 1', sortOrder: 1 }
+    ],
+    memberships: [
+      { userId: 'user-member', projectId: 'project-1' }
+    ],
+    entries: [
+      {
+        id: 'entry-1',
+        projectId: 'project-1',
+        systemId: 'system-1',
+        typeId: 'type-web',
+        name: 'Entry 1',
+        type: 'Web',
+        environment: 'Production',
+        status: 'Active',
+        url: 'https://allowed.com',
+        username: 'allowed-user',
+        password: 'allowed-password',
+        credentials: [
+          { id: 'cred-1', entryId: 'entry-1', departmentId: 'dept-2', linkType: 'Account', url: 'https://allowed.com', username: 'allowed-user', password: 'allowed-password' }
+        ]
+      }
+    ],
+    permissions: [
+      // System-level permission
+      { userId: 'user-member', projectId: 'project-1', systemId: 'system-1', canViewEntry: true, canViewUrl: true, canViewUsername: true, canRevealPassword: true },
+      // Link-level permission: none on cred-1 (which is dept-2)
+      { userId: 'user-member', projectId: 'project-1', systemId: 'system-1', credentialId: 'cred-1', canViewEntry: false }
+    ]
+  });
+
+  const app = createApp({
+    repos,
+    verifyGoogleAccessToken: async token => ({
+      id: 'auth-member',
+      authUserId: 'auth-member',
+      email: token === 'member-token' ? 'member@example.com' : '',
+      name: 'Member'
+    })
+  });
+  const server = await app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const login = await fetch(`${base}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'member-token' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    // Fetch entries
+    const res = await fetch(`${base}/api/projects/project-1/entries`, {
+      headers: { cookie }
+    });
+    assert.equal(res.status, 200);
+    const entries = await res.json();
+    assert.equal(entries.length, 1);
+    const entry = entries[0];
+    
+    // All credentials are filtered out
+    assert.equal(entry.credentials.length, 0);
+    // Primary username and url must be cleared
+    assert.equal(entry.url, '');
+    assert.equal(entry.username, '');
+    assert.equal(entry.hasCredentials, true);
+
+    // Try to reveal password via legacy reveal endpoint
+    const revealRes = await fetch(`${base}/api/entries/entry-1/reveal-password`, {
+      method: 'POST',
+      headers: { cookie }
+    });
+    // Should return 403 Forbidden
+    assert.equal(revealRes.status, 403);
+  } finally {
+    await app.close();
+  }
+});
+

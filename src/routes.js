@@ -312,14 +312,30 @@ export function createRouter(baseRepos, options = {}) {
       entryTypeId
     });
     if (!permission?.canViewEntry) return null;
-    const credentials = visibleCredentialsForPermission(entry, user, permission);
-    const primaryCredential = credentials.find(credential => credential.username) || credentials[0] || null;
+    const allUserPermissions = await repos.detailedPermissions.listForUser(user.id);
+    const credentials = visibleCredentialsForPermission(entry, user, permission, allUserPermissions);
+    
+    const hasCredentialsInDb = entry.credentials && entry.credentials.length > 0;
+    let url = '';
+    let username = '';
+    if (hasCredentialsInDb) {
+      if (credentials.length > 0) {
+        const primaryCredential = credentials.find(credential => credential.username) || credentials[0];
+        url = permission.canViewUrl ? (primaryCredential.url || '') : '';
+        username = permission.canViewUsername ? (primaryCredential.username || '') : '';
+      }
+    } else {
+      url = permission.canViewUrl ? (entry.url || '') : '';
+      username = permission.canViewUsername ? (entry.username || '') : '';
+    }
+
     return {
       ...entry,
+      hasCredentials: hasCredentialsInDb,
       systemId: entry.systemId || entry.projectSystemId || null,
       typeId: entry.typeId || entryTypeId,
-      url: permission.canViewUrl ? entry.url : '',
-      username: permission.canViewUsername ? (primaryCredential?.username || entry.username || '') : '',
+      url,
+      username,
       credentials,
       notes: permission.canViewNotes ? entry.notes : '',
       tags: permission.canViewNotes ? entry.tags : [],
@@ -343,16 +359,32 @@ export function createRouter(baseRepos, options = {}) {
     return credentials.filter(credential => departmentIds.has(String(credential.departmentId || '')));
   }
 
-  function visibleCredentialsForPermission(entry, user, permission) {
+  function visibleCredentialsForPermission(entry, user, permission, allUserPermissions) {
     if (isAdminUser(user)) {
       return (entry.credentials || []).map(credentialPayloadForAdmin(entry));
     }
     const departmentIds = userDepartmentIds(user);
+    const entryCredentialIds = new Set((entry.credentials || []).map(c => String(c.id)));
+    const hasAnyLinkPermissionsForEntry = (allUserPermissions || []).some(p => p.credentialId && entryCredentialIds.has(String(p.credentialId)));
+
     return (entry.credentials || [])
       .map(credential => {
-        const canViewAccount = departmentIds.has(String(credential.departmentId || ''))
-          && (permission.canViewUsername || permission.canRevealPassword);
-        const canViewLink = Boolean(permission.canViewUrl);
+        let canViewAccount = false;
+        let canViewLink = false;
+
+        if (hasAnyLinkPermissionsForEntry) {
+          const credPermission = (allUserPermissions || []).find(p => String(p.credentialId) === String(credential.id));
+          if (!credPermission || !credPermission.canViewEntry) return null;
+
+          canViewLink = true;
+          canViewAccount = departmentIds.has(String(credential.departmentId || ''))
+            && (permission.canViewUsername || permission.canRevealPassword);
+        } else {
+          canViewAccount = departmentIds.has(String(credential.departmentId || ''))
+            && (permission.canViewUsername || permission.canRevealPassword);
+          canViewLink = Boolean(permission.canViewUrl);
+        }
+
         if (!canViewLink && !canViewAccount) return null;
         return {
           id: credential.id,
@@ -404,7 +436,7 @@ export function createRouter(baseRepos, options = {}) {
   }
 
   async function requireCredentialAction(req, res, entryId, credentialId, action) {
-    const user = await requireEntryAction(req, res, entryId, action);
+    const user = await requireEntryAction(req, res, entryId, 'canViewEntry');
     if (!user) return null;
     if (isAdminUser(user)) return user;
     const credential = repos.entries.getCredential
@@ -414,9 +446,49 @@ export function createRouter(baseRepos, options = {}) {
       sendJson(res, 404, { error: 'Credential not found' });
       return null;
     }
-    if (!userDepartmentIds(user).has(String(credential.departmentId || ''))) {
-      sendJson(res, 403, { error: 'Permission denied' });
-      return null;
+
+    const allUserPermissions = await repos.detailedPermissions.listForUser(user.id);
+    const entry = await findEntryForPermission(user, entryId);
+    const entryCredentialIds = new Set((entry.credentials || []).map(c => String(c.id)));
+    const hasAnyLinkPermissionsForEntry = (allUserPermissions || []).some(p => p.credentialId && entryCredentialIds.has(String(p.credentialId)));
+
+    if (hasAnyLinkPermissionsForEntry) {
+      const credPermission = (allUserPermissions || []).find(p => String(p.credentialId) === String(credentialId));
+      if (!credPermission) {
+        sendJson(res, 403, { error: 'Permission denied' });
+        return null;
+      }
+      let allowed = false;
+      if (action === 'canRevealPassword') {
+        const permission = await detailedPermissionFor(user, entry.projectId, {
+          systemId: entry.systemId || entry.projectSystemId,
+          entryTypeId: entry.entryTypeId
+        });
+        allowed = credPermission.canViewEntry
+          && permission
+          && permission.canRevealPassword
+          && userDepartmentIds(user).has(String(credential.departmentId || ''));
+      } else if (action === 'canEdit') {
+        allowed = credPermission.canEdit;
+      } else if (action === 'canDelete') {
+        allowed = credPermission.canDelete;
+      }
+      if (!allowed) {
+        sendJson(res, 403, { error: 'Permission denied' });
+        return null;
+      }
+    } else {
+      if (action === 'canRevealPassword') {
+        if (!await requireEntryAction(req, res, entryId, 'canRevealPassword')) return null;
+      } else if (action === 'canEdit') {
+        if (!await requireEntryAction(req, res, entryId, 'canEdit')) return null;
+      } else if (action === 'canDelete') {
+        if (!await requireEntryAction(req, res, entryId, 'canDelete')) return null;
+      }
+      if (!userDepartmentIds(user).has(String(credential.departmentId || ''))) {
+        sendJson(res, 403, { error: 'Permission denied' });
+        return null;
+      }
     }
     return user;
   }
@@ -919,7 +991,7 @@ export function createRouter(baseRepos, options = {}) {
         const user = await requireEntryAction(req, res, entryId, 'canEdit');
         if (!user) return true;
         const input = await readJson(req);
-        const existing = await findEntryForPermission(user, entryId);
+        const existing = await findEditableEntry(user, entryId);
         const entryInput = await resolveEntryInput(input, existing);
         const targetProjectId = entryInput.projectId || existing?.projectId;
         if (!isAdminUser(user) && !await hasDetailedAction(user, targetProjectId, {
@@ -928,6 +1000,45 @@ export function createRouter(baseRepos, options = {}) {
         }, 'canEdit')) {
           return sendJson(res, 403, { error: 'Permission denied' });
         }
+
+        if (!isAdminUser(user)) {
+          const allUserPermissions = await repos.detailedPermissions.listForUser(user.id);
+          const entryCredentialIds = new Set((existing.credentials || []).map(c => String(c.id)));
+          const hasAnyLinkPermissionsForEntry = (allUserPermissions || []).some(p => p.credentialId && entryCredentialIds.has(String(p.credentialId)));
+
+          if (hasAnyLinkPermissionsForEntry) {
+            const incomingIds = new Set((input.credentials || []).filter(c => c.id).map(c => String(c.id)));
+
+            for (const existingCred of existing.credentials || []) {
+              if (!incomingIds.has(String(existingCred.id))) {
+                const credPermission = (allUserPermissions || []).find(p => String(p.credentialId) === String(existingCred.id));
+                if (!credPermission || !credPermission.canDelete) {
+                  return sendJson(res, 403, { error: 'Permission denied to delete this link' });
+                }
+              }
+            }
+
+            for (const incomingCred of input.credentials || []) {
+              if (incomingCred.id) {
+                const existingCred = (existing.credentials || []).find(c => String(c.id) === String(incomingCred.id));
+                if (existingCred) {
+                  const changed = incomingCred.linkType !== existingCred.linkType
+                    || incomingCred.url !== existingCred.url
+                    || incomingCred.username !== existingCred.username
+                    || (incomingCred.password !== undefined && incomingCred.password !== '');
+
+                  if (changed) {
+                    const credPermission = (allUserPermissions || []).find(p => String(p.credentialId) === String(incomingCred.id));
+                    if (!credPermission || !credPermission.canEdit) {
+                      return sendJson(res, 403, { error: 'Permission denied to edit this link' });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
         const entry = await repos.entries.update(entryId, entryInput);
         await repos.activity.log('entry.update', { projectId: entry.projectId, entryId: entry.id, details: entry.name });
         return sendJson(res, 200, entry);
@@ -944,6 +1055,18 @@ export function createRouter(baseRepos, options = {}) {
       if (revealMatch && req.method === 'POST') {
         const entryId = decodeURIComponent(revealMatch[1]);
         if (!await requireEntryAction(req, res, entryId, 'canRevealPassword')) return true;
+
+        const user = await requireUser(req, res);
+        if (!isAdminUser(user)) {
+          const entry = await findEditableEntry(user, entryId);
+          if (entry && entry.credentials && entry.credentials.length > 0) {
+            const firstCred = entry.credentials[0];
+            if (!await requireCredentialAction(req, res, entryId, firstCred.id, 'canRevealPassword')) {
+              return true;
+            }
+          }
+        }
+
         await repos.activity.log('entry.reveal_password', { entryId });
         return sendJson(res, 200, { password: await repos.entries.revealPassword(entryId) });
       }

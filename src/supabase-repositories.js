@@ -627,7 +627,11 @@ function detailedPermissionsRepo(client) {
     },
     async getBySystem(userId, projectId, systemId) {
       const rows = await this.listForUser(userId);
-      return rows.find(row => String(row.projectId) === String(projectId) && String(row.systemId) === String(systemId)) || null;
+      return rows.find(row => String(row.projectId) === String(projectId) && String(row.systemId) === String(systemId) && !row.credentialId) || null;
+    },
+    async getByCredential(userId, projectId, credentialId) {
+      const rows = await this.listForUser(userId);
+      return rows.find(row => String(row.projectId) === String(projectId) && String(row.credentialId) === String(credentialId)) || null;
     },
     async listForUser(userId) {
       const { data, error } = await client.from('detailed_permissions').select('*').eq('user_id', userId);
@@ -640,9 +644,11 @@ function detailedPermissionsRepo(client) {
       return data.map(mapPermission);
     },
     async upsert(userId, projectId, entryTypeId, permission) {
-      const existing = permission.systemId
-        ? await this.getBySystem(userId, projectId, permission.systemId)
-        : await this.get(userId, projectId, entryTypeId);
+      const existing = permission.credentialId
+        ? await this.getByCredential(userId, projectId, permission.credentialId)
+        : permission.systemId
+          ? await this.getBySystem(userId, projectId, permission.systemId)
+          : await this.get(userId, projectId, entryTypeId);
       const payload = permissionPayload({ userId, projectId, entryTypeId, ...permission });
       if (existing) {
         const { data, error } = await client.from('detailed_permissions').update(payload).eq('id', existing.id).select().single();
@@ -655,11 +661,55 @@ function detailedPermissionsRepo(client) {
     },
     async replaceForUser(userId, permissions = []) {
       await client.from('detailed_permissions').delete().eq('user_id', userId);
-      await insertPermissions(client, permissions.map(permission => ({ ...permission, userId })));
+      const seenKeys = new Set();
+      const uniquePermissions = [];
+      for (const permission of permissions) {
+        const projectId = permission.projectId;
+        const systemId = permission.systemId || permission.projectSystemId || null;
+        const entryTypeId = permission.entryTypeId || null;
+        const credentialId = permission.credentialId || null;
+        let key;
+        if (systemId) {
+          if (credentialId && credentialId !== 'undefined' && credentialId !== 'null') {
+            key = `project:${projectId}:system:${systemId}:credential:${credentialId}`;
+          } else {
+            key = `project:${projectId}:system:${systemId}:nocredential`;
+          }
+        } else {
+          key = `project:${projectId}:entryType:${entryTypeId}`;
+        }
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          uniquePermissions.push(permission);
+        }
+      }
+      await insertPermissions(client, uniquePermissions.map(permission => ({ ...permission, userId })));
     },
     async replaceForProject(projectId, permissions = []) {
       await client.from('detailed_permissions').delete().eq('project_id', projectId);
-      await insertPermissions(client, permissions.map(permission => ({ ...permission, projectId })));
+      const seenKeys = new Set();
+      const uniquePermissions = [];
+      for (const permission of permissions) {
+        const userId = permission.userId;
+        const systemId = permission.systemId || permission.projectSystemId || null;
+        const entryTypeId = permission.entryTypeId || null;
+        const credentialId = permission.credentialId || null;
+        let key;
+        if (systemId) {
+          if (credentialId && credentialId !== 'undefined' && credentialId !== 'null') {
+            key = `user:${userId}:system:${systemId}:credential:${credentialId}`;
+          } else {
+            key = `user:${userId}:system:${systemId}:nocredential`;
+          }
+        } else {
+          key = `user:${userId}:entryType:${entryTypeId}`;
+        }
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          uniquePermissions.push(permission);
+        }
+      }
+      await insertPermissions(client, uniquePermissions.map(permission => ({ ...permission, projectId })));
     }
   };
 }
@@ -1161,6 +1211,7 @@ function mapPermission(row) {
     systemId: row.system_id || null,
     projectSystemId: row.system_id || null,
     entryTypeId: row.entry_type_id || null,
+    credentialId: row.credential_id || null,
     canViewEntry: Boolean(row.can_view_entry),
     canViewUrl: Boolean(row.can_view_url),
     canViewUsername: Boolean(row.can_view_username),
@@ -1178,6 +1229,7 @@ function permissionPayload(permission) {
     project_id: permission.projectId,
     system_id: permission.systemId || permission.projectSystemId || null,
     entry_type_id: permission.entryTypeId || null,
+    credential_id: permission.credentialId || null,
     can_view_entry: Boolean(permission.canViewEntry),
     can_view_url: Boolean(permission.canViewUrl),
     can_view_username: Boolean(permission.canViewUsername),

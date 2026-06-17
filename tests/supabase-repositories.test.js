@@ -511,6 +511,31 @@ test('password credentials are shared across app instances with different app se
   assert.equal(await viewerRepos.entries.revealCredentialPassword(entry.id, entry.credentials[0].id), 'credential-shared-pass');
 });
 
+test('detailedPermissions repo handles credentialId queries and upserts', async () => {
+  const rows = createRows();
+  const repos = createSupabaseRepositories({
+    supabase: createFakeSupabase(rows),
+    encryptionKey: Buffer.alloc(32, 15)
+  });
+
+  await repos.detailedPermissions.upsert('user-1', 'project-1', null, {
+    systemId: 'system-1',
+    credentialId: 'credential-1',
+    canViewEntry: true,
+    canEdit: true
+  });
+
+  const permission = await repos.detailedPermissions.getByCredential('user-1', 'project-1', 'credential-1');
+  assert.ok(permission);
+  assert.equal(permission.credentialId, 'credential-1');
+  assert.equal(permission.canViewEntry, true);
+  assert.equal(permission.canEdit, true);
+  assert.equal(permission.canDelete, false);
+
+  const systemPermission = await repos.detailedPermissions.getBySystem('user-1', 'project-1', 'system-1');
+  assert.equal(systemPermission, null); // should not find link-level permissions as system-level
+});
+
 function createRows() {
   return {
     app_users: [],
