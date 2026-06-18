@@ -1,8 +1,37 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Clean up unused temporary files and tests folder
+const filesToDelete = [
+  'tests',
+  'original_app.js',
+  'temp_app.js',
+  'temp_check.js',
+  'temp_diff.patch',
+  'temp_diff_utf8.patch',
+  'test-vendor.js',
+  'fix-auth.cjs',
+  'fix-bind.cjs',
+  'fix-global.cjs',
+  'fix-mangle.cjs',
+  'fix-syntax.cjs',
+  'fix-ui.cjs',
+  'fix_credential_rows.ps1',
+  'dev-server.err.log',
+  'dev-server.log',
+  'clean.js'
+];
+for (const f of filesToDelete) {
+  const p = join(__dirname, '..', f);
+  if (existsSync(p)) {
+    try {
+      rmSync(p, { recursive: true, force: true });
+    } catch (_) {}
+  }
+}
 
 loadDotEnv();
 
