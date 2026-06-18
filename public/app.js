@@ -1485,8 +1485,7 @@ async function saveProjectSystem(event) {
   upsertProjectSystem(projectId, savedSystem);
   renderProjects();
   $('#projectSystemDialog')?.close();
-  renderHeader();
-  renderEntries();
+  await refreshEntriesForSelectedProject();
 }
 
 function resetProjectSystemForm(projectId = state.selectedProjectId) {
