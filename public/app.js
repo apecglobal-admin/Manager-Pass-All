@@ -1164,8 +1164,13 @@ function bindSystemSubmenuActions() {
     state.selectedEntryId = null;
     clearRevealCache();
     state.expandedProjectIds.add(String(state.selectedProjectId));
-    if (changedProject) await loadEntries();
-    else renderEntries();
+    if (changedProject) {
+      renderProjects();
+      renderEntries();
+      await refreshEntriesForSelectedProject();
+    } else {
+      renderEntries();
+    }
     renderHeader();
   }));
   document.querySelectorAll('.system-submenu .item-more-btn').forEach(button => button.addEventListener('click', event => {
